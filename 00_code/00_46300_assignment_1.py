@@ -493,32 +493,22 @@ class BEM (Utils_BEM):
                                 1, self.R-1,
                                 args = (tsr, -1, -1, theta_p))
         
-        
         for r in r_range:
             print (f"r = {r}")
-            # a, a_p, F = self.converge_BEM(r, theta_p)
-            # bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
-            # bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
-            # bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
-            p_N, p_T = self.calc_local_forces (
-                r, 
-                -1,
-                -1, 
-                tsr, 
-                theta_p
-                )
-            bem_ds["p_T"] = p_T
+            a, a_p, F = self.converge_BEM(r, theta_p)
+            bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
+            bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
+            bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
         
-        # p_N, p_T = self.calc_local_forces (
-        #     r_range, 
-        #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
-        #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
-        #     tsr, 
-        #     theta_p
-        #     )
+        p_N, p_T = self.calc_local_forces (
+            r=r_range, 
+            tsr=tsr,
+            a=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
+            a_p=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
+            theta_p=theta_p
+            )
         
-        M2 = scipy.integrate.trapezoid(bem_ds.sel(tsr=tsr,theta_p=theta_p)["p_T"].values, r_range)
-        # M2 = scipy.integrate.trapezoid(p_T, r_range)
+        M2 = scipy.integrate.trapezoid(p_T, r_range)
         
         fig, ax = plt.subplots(figsize=(16, 10))
         ax.plot(r_range, p_T)
