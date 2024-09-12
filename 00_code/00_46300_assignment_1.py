@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+
 #File handling imports
 import os
 from pathlib import Path
@@ -146,10 +147,36 @@ class BEM (Utils_BEM):
                 Blade solidity at radius r
         """
         return (self.c*self.B)/(2*np.pi*r)
+    
+    def relax_parameter (self, x_tmp, x_0, f=.1):
+        """Overrelax the variable x by combining the temporary, approximated 
+        value x_tmp with the value from the previous iteration x_0 using the 
+        relaxation factor f
         
+        Parameters:
+            x_tmp (float or array-like):
+                Temporary, approximated value for x
+            x_0 (float or array-like):
+                Value of x from the previous iteration
+            f (float or array-like):
+                Relaxation factor (default f=.1)
+            
+        Returns:
+            x (float or array-like):
+                Relaxed value for x
+        """
+        #Check inputs
+        # Check if the dimensions of the input values match (must be either 
+        # scalar values or array-like of equal shape)
+        x_tmp, x_0, f = self.check_dims (x_tmp, x_0, f)
+        
+        #Relax value
+        x = f*x_tmp + (1-f)*x_0 
+        return x
+    
     def calc_ind_factors(self, r, theta_p = np.pi, 
                          a_0 = 0, a_p_0 = 0,
-                         method = "Gaulert"):
+                         gaulert_method = "classic"):
         """Calulation of the induced velocity factors from the equations of the
         blade element momentum theory.
         
@@ -162,11 +189,11 @@ class BEM (Utils_BEM):
                 Start value for the axial induction factor a (default: 0)
             a_p_0  (scalar numerical value or array-like):
                 Start value for the tangential induction factor a' (default: 0)
-            method (str):
+            gaulert_method (str):
                 Selection of the approach to use for the calculation of the 
                 induction factors.
                 Possible values:
-                - 'Gaulert' (default): Practical approximation of the 
+                - 'classic' (default): Classic practical approximation of the 
                   Gaulert Correction for high values of a
                 - 'Madsen': Empirical formula by Madsen et. al.
             
@@ -180,8 +207,11 @@ class BEM (Utils_BEM):
         """
         
         #Check inputs:
-        if not type(method) == str or method not in ['Gaulert', "Madsen"]:
+        if not type(gaulert_method) == str or gaulert_method not in ['classic', "Madsen"]:
             raise ValueError("Method must be either 'Gaulert' or 'Madsen'")
+        
+        if r>=.98*self.R:
+            return -1, -1, -1
         
         #Calculate the angle of attack
         phi = self.arctan_phi (a_0, a_p_0, r)
@@ -206,38 +236,33 @@ class BEM (Utils_BEM):
         C_T = np.divide(np.power(1-a_0, 2)*C_n*sigma,
                         np.power(np.sin(phi),2))
         
-        if method == "Gaulert":
+        if gaulert_method == "classic":
             # Temporary axial induction factor
             if a_0 <.33:
-                a_tmp = C_T * np.divide (1,
-                                         4*F*(1-a_0))
+                a = C_T * np.divide (1,
+                                     4*F*(1-a_0))
                 
                 # Full formula in one line (C_T inserted)
                 # a_tmp = (sigma*C_n)/(4*F*np.power(np.sin(phi),2)) * (1-a_0)
             else:
-                a_tmp = C_T * np.divide (1,
-                                       4*F*(1-.25 * (5-3*a_0) * a_0))
+                a = C_T * np.divide (1,
+                                     4*F*(1-.25 * (5-3*a_0) * a_0))
             
             # Temporary tangential induction factor
-            a_p_tmp = (1+a_p_0) * np.divide(sigma*C_t,
-                                            4*F*np.sin(phi)*np.cos(phi)) 
-            
-            # Combine temporal induction factors with the relaxation factor
-            f = .1
-            a = f*a_tmp + (1-f)*a_0 
-            a_p = f*a_p_tmp + (1-f)*a_p_0 
+            a_p = (1+a_p_0) * np.divide(sigma*C_t,
+                                        4*F*np.sin(phi)*np.cos(phi)) 
          
         else:
             a = .246*C_T + .0586*np.power(C_T,2) + .0883*np.power(C_T,3)
             
             #Tangential induction factor without corrections (Eq. 6.36):
-            a_p = 1 / (np.divide(4*np.sin(phi)*np.cos(phi), sigma*C_t) 
-                       - 1)
-        
+            a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
+                       - 1)   
         
         return a, a_p, F
     
-    def converge_BEM(self, r, theta_p = np.pi, a_0 = 0, a_p_0 = 0, epsilon=1e-5):
+    def converge_BEM(self, r, theta_p = np.pi, a_0 = 0, a_p_0 = 0, 
+                     epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
         Note: If the values do not converge within 1000 iterations, the 
@@ -253,7 +278,17 @@ class BEM (Utils_BEM):
             a_p_0  (scalar numerical value or array-like):
                 Start value for the tangential induction factor a' (default: 0)
             epsilon (float):
-                Maximum error tolerance between consecutive iteration
+                Maximum error tolerance between consecutive iteration 
+                (default = 1e-5)
+            f (float or array-like):
+                Relaxation factor (default f=.1)
+            gaulert_method (str):
+                Selection of the approach to use for the calculation of the 
+                induction factors.
+                Possible values:
+                - 'classic' (default): Classic practical approximation of the 
+                  Gaulert Correction for high values of a
+                - 'Madsen': Empirical formula by Madsen et. al.
             
         Returns:
             a (scalar numerical value or array-like):
@@ -264,7 +299,8 @@ class BEM (Utils_BEM):
                 Prandtl correction factor
         """
         
-        a, a_p, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0)
+        a, a_p, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0, 
+                                          gaulert_method=gaulert_method)
         n = 0
         
         while (abs(a-a_0)>epsilon) or (abs(a_p-a_p_0)>epsilon): 
@@ -272,7 +308,10 @@ class BEM (Utils_BEM):
                 print(f"Maximum iteration number reached before convergence")
                 break
             a_0, a_p_0 = a, a_p
-            a, a_p, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0)
+            a_tmp, a_p_tmp, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0, 
+                                                      gaulert_method=gaulert_method)
+            a = self.relax_parameter(a_tmp, a_0, f)
+            a_p = self.relax_parameter(a_p_tmp, a_p_0, f)
 
             n +=1
         
@@ -314,16 +353,40 @@ class BEM (Utils_BEM):
         # scalar values or array-like of equal shape)
         a, a_p, tsr, theta_p = self.check_dims (a, a_p, tsr, theta_p)
         
-        #Check if a or a_p have a default value. If so, calculate them
-        if (type(a)!=np.ndarray and a==-1) or \
-            (type(a_p)!=np.ndarray and a_p==-1):
+        r = np.array(r)
+        a = np.array(a)
+        a_p = np.array(a_p)
+        tsr = np.array(tsr)
+        theta_p = np.array(theta_p)
+        
+        #Check whether some of the values are in the last 2% of the rotor
+        # radius. If so, split the values and return p_T=0 and p_N = 0 for them
+        # later on. This region is known to be mathematically unstable
+        if r.size>1:
+            # Radii for which p_T and p_N should be zero
+            i_end = np.where(r>=.98*self.R)
+            r_end = r[i_end]
+            
+            # Radii for which the calculation needs to be performed
+            i_valid = np.where(r<.98*self.R)
+            r = r[i_valid]
+            if a.size>1: a = a[i_valid]
+            if a_p.size>1: a_p = a_p[i_valid]
+            if tsr.size>1: tsr = tsr[i_valid]
+            if theta_p.size>1: theta_p = theta_p[i_valid]
+        else:
+            if r>=.98*self.R:
+                return np.float32(0), np.float32(0)
+        
+        
+        #Check if a or a_p have a default value. If so, calculate them using BEM
+        if any(np.any(var==-1) for var in [a, a_p]):
             a, a_p, F = self.converge_BEM(r, theta_p)
         
         #Check if there are any zero values in a, a_p and tsr (not allowed)
         if not all(np.all(var) for var in [a, a_p, tsr]):
             raise ValueError("No zero values allowed in a, a* and tsr")
 
-        
         #Calculate the angle of attack
         phi = self.arctan_phi (a, a_p, r, omega=tsr*self.V_0/self.R, V_0=-1)
         theta = theta_p + self.beta
@@ -347,6 +410,12 @@ class BEM (Utils_BEM):
         #Calculate local normal and tangential forces
         p_N = l*np.cos(phi) + d*np.sin(phi)
         p_T = l*np.sin(phi) - d*np.cos(phi)
+        
+        #Append the radii which were >=.98*R (for these, p_T and p_N should be 
+        #zero)
+        if r.size>1:
+            p_N = np.append (p_N, np.zeros(r_end.shape))
+            p_T = np.append (p_T, np.zeros(r_end.shape))
         
         return p_N, p_T
     
@@ -378,13 +447,7 @@ class BEM (Utils_BEM):
                 Local tangential force in N/m
         """
         
-        try:
-            p_N, p_T = self.calc_local_forces (r, tsr, a=-1, a_p=-1, theta_p=np.pi)
-        except:
-            p_T = 0
-        else:
-            if type(p_T) is type(None) or np.isnan(p_T):
-                p_T = 0
+        p_N, p_T = self.calc_local_forces (r, tsr, a=-1, a_p=-1, theta_p=np.pi)
         
         return p_T
     
@@ -403,7 +466,7 @@ class BEM (Utils_BEM):
         
         """
         
-        r_range = np.arange(.5,self.R-.2,.5)
+        r_range = np.arange(1,self.R,.1)
         bem_ds = xr.Dataset(
             {},
             coords={"r":r_range, 
@@ -421,28 +484,47 @@ class BEM (Utils_BEM):
                           np.full(ds_shape, None))
         bem_ds["F"] = (list(bem_ds.coords), 
                           np.full(ds_shape, None))
+        bem_ds["p_T"] = (list(bem_ds.coords), 
+                          np.full(ds_shape, None))
         
         tsr = 7
         theta_p = -3
         M, M_abserr = scipy.integrate.quad(self.calc_local_tang_force, 
-                                0, self.R,
+                                1, self.R-1,
                                 args = (tsr, -1, -1, theta_p))
+        
+        
         for r in r_range:
             print (f"r = {r}")
-            a, a_p, F = self.converge_BEM(r, theta_p)
-            bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
-            bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
-            bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
+            # a, a_p, F = self.converge_BEM(r, theta_p)
+            # bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
+            # bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
+            # bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
+            p_N, p_T = self.calc_local_forces (
+                r, 
+                -1,
+                -1, 
+                tsr, 
+                theta_p
+                )
+            bem_ds["p_T"] = p_T
         
-        p_N, p_T = self.calc_local_forces (
-            r_range, 
-            bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
-            bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
-            tsr, 
-            theta_p
-            )
+        # p_N, p_T = self.calc_local_forces (
+        #     r_range, 
+        #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
+        #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
+        #     tsr, 
+        #     theta_p
+        #     )
         
-        M2 = scipy.integrate.trapezoid(p_T, r_range)
+        M2 = scipy.integrate.trapezoid(bem_ds.sel(tsr=tsr,theta_p=theta_p)["p_T"].values, r_range)
+        # M2 = scipy.integrate.trapezoid(p_T, r_range)
+        
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(r_range, p_T)
+        ax.grid()
+        plt.savefig(fname="integ.svg",
+                    bbox_inches = "tight")
         
         return M, M_abserr, M2, p_N, p_T
         
@@ -479,18 +561,22 @@ if __name__ == "__main__":
                            V_0 = V_0, 
                            tsr = tsr, 
                            beta = 2, 
-                           c = .5, 
+                           c = 1.5, 
                            C_l = .5, 
                            C_d = .01, 
                            rho=1.225, 
                            B=3)
     	
     r = 24.5
-    a, a_p, F = BEM_calculator.converge_BEM(r=r, theta_p=-3)
+    a, a_p, F = BEM_calculator.converge_BEM(r=r, theta_p=-3, 
+                                            f = .1,
+                                            gaulert_method = "classic")
     p_N, p_T = BEM_calculator.calc_local_forces (r=r, theta_p=-3, tsr = tsr, 
                                                  a=a, a_p=a_p)
     
     
-    # tsr = np.arange(5,10)
-    # theta_p=np.arange(-3,4)
-    # M, M_abserr, M2, p_N, p_T = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=theta_p)
+    tsr = np.arange(5,10)
+    theta_p=np.arange(-3,4)
+    M, M_abserr, M2, p_N, p_T = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=theta_p)
+    
+    
