@@ -79,7 +79,7 @@ class BEM (Utils_BEM):
         self.t_airfoils = dict(zip(self.airfoil_names, t_airfoils)) 
         
     
-    def arctan_phi (self, a, a_p, r, V_0=-1, omega=-1):
+    def arctan_phi (self, a, a_p, r, tsr=-1, V_0=-1, omega = 1):
         """Calculate the angle between the plane of rotation and the relative 
         velocity via formula 6.7 (cf. script)
         
@@ -94,6 +94,8 @@ class BEM (Utils_BEM):
                 induction factors are calculated from the BEM method
             r (scalar numerical value or array-like):
                 Radii at which to calculate the values
+            tsr (scalar numerical value or array-like):
+                Tip speed ratio of the Turbine
             V_0 (scalar numerical value or array-like):
                 Free stream velocity in front of the turbine
                 Note: if -1 is used, then the value from the class parameter is
@@ -111,17 +113,7 @@ class BEM (Utils_BEM):
         """
         
         #Check the input values
-        a, a_p, r, V_0, omega = self.check_dims (a, a_p, r, V_0, omega)
-        
-        if type(V_0) is not np.ndarray and V_0 ==-1:
-            V_0 = self.V_0 
-        elif type(V_0) is np.ndarray and np.any(V_0 <= 0):
-            raise ValueError ("Free stream velocity V_0 contains negative values")
-        
-        if type(omega) is not np.ndarray and omega ==-1:
-            omega = self.tsr*V_0/self.R
-        elif type(omega) is np.ndarray and np.any(omega <= 0):
-            raise ValueError ("Free stream velocity V_0 contains negative values")
+        a, a_p, r, tsr, V_0, omega = self.check_dims (a, a_p, r, tsr, V_0, omega)
         
         if np.any(a>=1) or np.any(a<0):
             raise ValueError("Axial induction factor must be lie within [0,1[")
@@ -130,8 +122,15 @@ class BEM (Utils_BEM):
             raise ValueError("Tangential induction factor must be lie within "
                              + f"[0,inf[")
         
-        phi =  np.arctan(np.divide((1-a)*V_0, 
-                                   (1+a_p)*omega*r).astype(float))
+        if not np.any(tsr<=0):
+            phi =  np.arctan((np.divide(1-a, 
+                                        (1+a_p)*tsr) * self.R/r).astype(float))
+        elif not np.any(V_0<=0) and not np.any(omega<=0):
+            phi =  np.arctan(np.divide((1-a)*V_0, 
+                                       (1+a_p)*omega*r).astype(float))
+        else:
+            raise ValueError("Invalid input parameters. Either tsr>0 or "
+                             f"V_0>0 and omega>0 need to be given")
         
         return phi
     
@@ -214,7 +213,7 @@ class BEM (Utils_BEM):
             return -1, -1, -1
         
         #Calculate the angle of attack
-        phi = self.arctan_phi (a_0, a_p_0, r)
+        phi = self.arctan_phi (a_0, a_p_0, r, self.tsr)
         theta = theta_p + self.beta
         
         aoa = phi-theta
@@ -224,7 +223,7 @@ class BEM (Utils_BEM):
         C_t = self.C_l*np.sin(phi) - self.C_d*np.cos(phi)
         
         #Calculate solidity
-        sigma = self.calc_solidity(r)
+        sigma = np.divide(self.c*self.B, 2*np.pi*r)
         
         #Calculate Prandtl correction factor
         f = self.B/2 * (self.R-r)/(r*np.sin(phi)) 
@@ -297,6 +296,11 @@ class BEM (Utils_BEM):
                 Tangential induction factor
             F (scalar numerical value or array-like):
                 Prandtl correction factor
+            conv_res (scalar numerical value or array-like):
+                Residual deviation for a and a_p from the last iteration
+            n (scalar numerical value or array-like):
+                Number of iteration
+            
         """
         
         a, a_p, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0, 
@@ -315,10 +319,12 @@ class BEM (Utils_BEM):
 
             n +=1
         
-        if n<=1000:
-            print(f"Calculation stopped after {n} iteration")
-            
-        return a, a_p, F
+        # if n<=1000:
+        #     print(f"Calculation stopped after {n} iteration")
+        
+        conv_res = (abs(a-a_0), abs(a_p-a_p_0))
+        
+        return a, a_p, F, conv_res, n
     
     def calc_local_forces (self, r, tsr, a=-1, a_p=-1, theta_p=np.pi):
         """Calculates the local forces for given turbine parameters.
@@ -381,14 +387,14 @@ class BEM (Utils_BEM):
         
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
-            a, a_p, F = self.converge_BEM(r, theta_p)
+            a, a_p, F, _, _ = self.converge_BEM(r, theta_p)
         
         #Check if there are any zero values in a, a_p and tsr (not allowed)
         if not all(np.all(var) for var in [a, a_p, tsr]):
             raise ValueError("No zero values allowed in a, a* and tsr")
 
         #Calculate the angle of attack
-        phi = self.arctan_phi (a, a_p, r, omega=tsr*self.V_0/self.R, V_0=-1)
+        phi = self.arctan_phi (a, a_p, r, tsr=self.tsr)
         theta = theta_p + self.beta
         
         aoa = phi-theta
@@ -451,7 +457,7 @@ class BEM (Utils_BEM):
         
         return p_T
     
-    def optimize_C_p (self, tsr_range, theta_p_range):
+    def optimize_C_p (self, tsr_range, theta_p_range, r_range = []):
         """Optimization of the tip speed ratio and pitch angle for the 
         maximization of the power coefficient.
         
@@ -466,77 +472,83 @@ class BEM (Utils_BEM):
         
         """
         
-        r_range = np.arange(1,self.R,.1)
+        #Prepare inputs
+        if not r_range: r_range = np.arange(1,self.R,.1)
+        tsr_range = np.array(tsr_range)
+        theta_p_range = np.array(theta_p_range)
+        
+        #Prepare dataset for the values
         bem_ds = xr.Dataset(
             {},
             coords={"r":r_range, 
                     "tsr":tsr_range,
                     "theta_p":theta_p_range}
             )
-        tsr_range = np.array(tsr_range)
-        theta_p_range = np.array(theta_p_range)
         
-        ds_shape = [len(r_range), len(tsr_range), len(theta_p_range)]
+        ds_bem_shape = [len(r_range), len(tsr_range), len(theta_p_range)]
         
-        bem_ds["a"] = (list(bem_ds.coords), 
-                          np.full(ds_shape, None))
-        bem_ds["a_p"] = (list(bem_ds.coords), 
-                          np.full(ds_shape, None))
-        bem_ds["F"] = (list(bem_ds.coords), 
-                          np.full(ds_shape, None))
-        bem_ds["p_T"] = (list(bem_ds.coords), 
-                          np.full(ds_shape, None))
+        bem_ds["a"] = (list(bem_ds.coords.keys()),
+                       np.empty(ds_bem_shape))
+        bem_ds["a_p"] = (list(bem_ds.coords.keys()),
+                         np.empty(ds_bem_shape))
+        bem_ds["F"] = (list(bem_ds.coords.keys()),
+                       np.empty(ds_bem_shape))
+        bem_ds["p_T"] = (list(bem_ds.coords.keys()), 
+                         np.empty(ds_bem_shape))
         
-        tsr = 7
-        theta_p = -3
-        M, M_abserr = scipy.integrate.quad(self.calc_local_tang_force, 
-                                1, self.R-1,
-                                args = (tsr, -1, -1, theta_p))
-        
-        for r in r_range:
-            print (f"r = {r}")
-            a, a_p, F = self.converge_BEM(r, theta_p)
-            bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
-            bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
-            bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
-        
-        p_N, p_T = self.calc_local_forces (
-            r=r_range, 
-            tsr=tsr,
-            a=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
-            a_p=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
-            theta_p=theta_p
+        #Prepare dataset for the values
+        M_ds = xr.Dataset(
+            {},
+            coords={"tsr":tsr_range,
+                    "theta_p":theta_p_range}
             )
         
-        M2 = scipy.integrate.trapezoid(p_T, r_range)
+        ds_m_shape = [len(tsr_range), len(theta_p_range)]
         
-        fig, ax = plt.subplots(figsize=(16, 10))
-        ax.plot(r_range, p_T)
-        ax.grid()
-        plt.savefig(fname="integ.svg",
-                    bbox_inches = "tight")
+        M_ds["M_int"] = (list(M_ds.coords.keys()), 
+                                 np.empty(ds_m_shape))
+        M_ds["M_iter"] = (list(M_ds.coords.keys()), 
+                                np.empty(ds_m_shape))
         
-        return M, M_abserr, M2, p_N, p_T
+# =============================================================================
+#         #Plot power coefficent curve
+#         fig, ax = plt.subplots(figsize=(16, 10))
+#         ax.plot(r_range, p_T)
+#         ax.grid()
+#         plt.savefig(fname="integ.svg",
+#                     bbox_inches = "tight")
+# =============================================================================
         
-        # for tsr in tsr_range:
-        #     for theta_p in theta_p_range:
+        for tsr in tsr_range:
+            for theta_p in theta_p_range:
+                #Integrate p_T over r as a function
+                M_integ, M_abserr = scipy.integrate.quad(self.calc_local_tang_force, 
+                                        1, self.R-1,
+                                        args = (tsr, -1, -1, theta_p))
                 
-        #         scipy.integrate.quad(self.calc_local_tang_force, 
-        #                              1, R,
-        #                              args = (tsr, -1, -1, theta_p))
-                # for r in r_range:
-                #     a, a_p, F = self.converge_BEM(r, theta_p)
-                #     bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
-                #     bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
-                #     bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
+                #Integrate p_T over r using discrete samples for r
+                for r in r_range:
+                    print (f"r = {r}")
+                    a, a_p, F, _, _ = self.converge_BEM(r, theta_p)
+                    bem_ds["a"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a
+                    bem_ds["a_p"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = a_p
+                    bem_ds["F"].loc[dict(r=r,tsr=tsr,theta_p=theta_p)] = F
                 
-                # p_N, p_T = self.calc_local_forces (
-                #     r_range, 
-                #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
-                #     bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
-                #     tsr, 
-                #     theta_p
-                #     )
+                p_N, p_T = self.calc_local_forces (
+                    r=r_range, 
+                    tsr=tsr,
+                    a=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a"].values,
+                    a_p=bem_ds.sel(tsr=tsr,theta_p=theta_p)["a_p"].values, 
+                    theta_p=theta_p
+                    )
+                
+                M_iter = scipy.integrate.trapezoid(p_T, r_range)
+                
+                #Save results to dataframe
+                M_ds["M_int"].loc[dict(tsr=tsr,theta_p=theta_p)] = M_integ
+                M_ds["M_iter"].loc[dict(tsr=tsr,theta_p=theta_p)] = M_iter
+                
+        return M_ds, bem_ds
                 
        
 #%% Main    
@@ -558,15 +570,15 @@ if __name__ == "__main__":
                            B=3)
     	
     r = 24.5
-    a, a_p, F = BEM_calculator.converge_BEM(r=r, theta_p=-3, 
+    a, a_p, F, res, n = BEM_calculator.converge_BEM(r=r, theta_p=-3, 
                                             f = .1,
                                             gaulert_method = "classic")
     p_N, p_T = BEM_calculator.calc_local_forces (r=r, theta_p=-3, tsr = tsr, 
                                                  a=a, a_p=a_p)
     
     
-    tsr = np.arange(5,10)
-    theta_p=np.arange(-3,4)
-    M, M_abserr, M2, p_N, p_T = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=theta_p)
+    # tsr = np.arange(5,10)
+    # theta_p=np.arange(-3,4)
+    # M_ds, bem_ds = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=[-3])
     
     

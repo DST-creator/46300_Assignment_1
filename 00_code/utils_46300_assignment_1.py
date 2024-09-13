@@ -27,7 +27,9 @@ class Utils_BEM():
             shape = var.shape
         elif type(var) == np.ndarray:
             shape = var.shape
-        elif type(var) in [int, float, np.float16, np.float32, np.float64]:
+        elif type(var) in [int, float, 
+                           np.int16, np.int32, np.int64, 
+                           np.float16, np.float32, np.float64]:
             var = np.float64(var)
             shape = 1
         else:
