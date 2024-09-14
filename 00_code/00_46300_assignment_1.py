@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import concurrent.futures
-from concurrent.futures import ThreadPoolExecutor
 
 #File handling imports
 import os
@@ -124,7 +123,7 @@ class BEM (Utils_BEM):
         
         if np.any(a_p<0):
             raise ValueError("Tangential induction factor must be lie within "
-                             + f"[0,inf[")
+                             + "[0,inf[")
         
         if not np.any(tsr<=0):
             phi =  np.arctan((np.divide(1-a, 
@@ -134,7 +133,7 @@ class BEM (Utils_BEM):
                                        (1+a_p)*omega*r).astype(float))
         else:
             raise ValueError("Invalid input parameters. Either tsr>0 or "
-                             f"V_0>0 and omega>0 need to be given")
+                             + "V_0>0 and omega>0 need to be given")
         
         return phi
     
@@ -211,16 +210,38 @@ class BEM (Utils_BEM):
             F (scalar numerical value or array-like):
                 Prandtl correction factor
         """
+        #Check inputs
+        # Check if the dimensions of the input values match (must be either 
+        # scalar values or array-like of equal shape)
+        r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, a_0, a_p_0)
         
-        #Check inputs:
+        
+        #Check input for method
         if not type(gaulert_method) == str or gaulert_method not in ['classic', "Madsen"]:
             raise ValueError("Method must be either 'Gaulert' or 'Madsen'")
         
-        if r>=.98*self.R:
-            return -1, -1, -1
+        #Check whether some of the values are in the last 2% of the rotor
+        # radius. If so, split the values and return a=a_p=-1 for them
+        # later on. This region is known to be mathematically unstable
+        if r.size>1:
+            # Radii for which p_T and p_N should be zero
+            i_end = np.where(r>=.98*self.R)
+            r_end = r[i_end]
+            
+            # Radii for which the calculation needs to be performed
+            i_valid = np.where(r<.98*self.R)
+            r = r[i_valid]
+            if a_0.size>1: a_0 = a_0[i_valid]
+            if a_p_0.size>1: a_p_0 = a_p_0[i_valid]
+            if tsr.size>1: tsr = tsr[i_valid]
+            if theta_p.size>1: theta_p = theta_p[i_valid]
+        else:
+            if r>=.98*self.R:
+                return np.float32(0), np.float32(0), np.float32(0)
+        
         
         #Calculate the angle of attack
-        phi = self.arctan_phi (a_0, a_p_0, r, tsr)
+        phi = self.arctan_phi (a=a_0, a_p=a_p_0, r=r, tsr=tsr)
         theta = theta_p + self.beta
         
         aoa = phi-theta
@@ -264,6 +285,13 @@ class BEM (Utils_BEM):
             #Tangential induction factor without corrections (Eq. 6.36):
             a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
                        - 1)   
+        
+        #Append the radii which were >=.98*R (for these, p_T and p_N should be 
+        #zero)
+        if r.size>1:
+            a = np.append (a, np.zeros(r_end.shape))
+            a_p = np.append (a_p, np.zeros(r_end.shape))
+            F = np.append (F, np.zeros(r_end.shape))
         
         return a, a_p, F
     
@@ -313,7 +341,8 @@ class BEM (Utils_BEM):
             
         """
         
-        a, a_p, F = self.calc_ind_factors(r, tsr, theta_p, a_0, a_p_0, 
+        a, a_p, F = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
+                                          a_0=a_0, a_p_0=a_p_0, 
                                           gaulert_method=gaulert_method)
         n = 0
         
@@ -322,7 +351,9 @@ class BEM (Utils_BEM):
                 print(f"Maximum iteration number reached before convergence")
                 break
             a_0, a_p_0 = a, a_p
-            a_tmp, a_p_tmp, F = self.calc_ind_factors(r, theta_p, a_0, a_p_0, 
+            a_tmp, a_p_tmp, F = self.calc_ind_factors(r=r, tsr = tsr, 
+                                                      theta_p=theta_p, 
+                                                      a_0=a_0, a_p_0=a_p_0, 
                                                       gaulert_method=gaulert_method)
             a = self.relax_parameter(a_tmp, a_0, f)
             a_p = self.relax_parameter(a_p_tmp, a_p_0, f)
@@ -471,6 +502,40 @@ class BEM (Utils_BEM):
         
         return p_T
     
+    def integ_dCp_numerical (self, tsr, theta_p, r_min = .1, r_max = -1, dr = .1):
+        #Prepare inputs
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+            
+        if dr< 0:
+            raise ValueError("Step width must be positive")
+        elif dr>r_max-r_min:
+            raise ValueError("Step width must be smaller than interval of"
+                             + "r_min and r_max")
+        
+        r_range = np.arange(r_min, r_max, dr)
+        
+        a_arr = a_p_arr = np.array(np.zeros(len(r_range)))
+        
+        for i,r in enumerate(r_range):
+            a_arr[i], a_p_arr[i], _, _, _ = self.converge_BEM(r=r, 
+                                                              tsr=tsr, 
+                                                              theta_p=theta_p)
+        
+        dc_p = self.dC_p (r=r_range, tsr=tsr, 
+                          a=a_arr, a_p=a_p_arr, theta_p=theta_p)
+        
+        c_p = scipy.integrate.trapezoid(dc_p, r_range)
+        
+        return c_p, dc_p, a_arr, a_p_arr
+    
     def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
             raise TypeError("Input values must be scalar")
@@ -527,7 +592,7 @@ class BEM (Utils_BEM):
         #Check inputs
         # Check if the dimensions of the input values match (must be either 
         # scalar values or array-like of equal shape)
-        r, tsr = self.check_dims (r, tsr, a, a_p, theta_p)
+        r, tsr, a, a_p, theta_p = self.check_dims (r, tsr, a, a_p, theta_p)
         
         if np.any(r<0) or np.any (r>self.R):
             raise ValueError("Radius r must be within [0,R]")
@@ -540,13 +605,13 @@ class BEM (Utils_BEM):
         
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
-            a, a_p, _, _, _ = self.converge_BEM(r, theta_p)
-        
-        #Check if there are any zero values in a, a_p and tsr (not allowed)
-        if not all(np.all(var) for var in [a, a_p]):
-            raise ValueError("No zero values allowed in a and a*")
+            a, a_p, _, _, _ = self.converge_BEM(r=r, 
+                                                tsr=tsr, 
+                                                theta_p=theta_p)
 
-        dc_p = 8*np.power(tsr,2)/(self.R^4)*a_p*(1-a)*np.power(r,3)
+        dc_p = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
+        
+        return dc_p
     
     def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
@@ -584,7 +649,7 @@ class BEM (Utils_BEM):
         elif r_max>self.R:
             raise ValueError("Upper bound must be within [0,R]")
             
-        if r_min< 0:
+        if dr< 0:
             raise ValueError("Step width must be positive")
         elif dr>r_max-r_min:
             raise ValueError("Step width must be smaller than interval of"
@@ -609,7 +674,31 @@ class BEM (Utils_BEM):
         
         return M_num, p_T, a_arr, a_p_arr
     
-    def optimize_C_p (self, tsr_range, theta_p_range, 
+    def inv_c_p_anal (self, x, r_min=0, r_max=-1):
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+        
+        tsr, theta_p = x
+        
+        c_p, _ = self.integ_dCp_analytical(tsr, theta_p, r_min, r_max)
+        
+        inv_c_p = 1 - c_p
+        
+        if inv_c_p <0:
+            return 1 
+        elif inv_c_p >1:
+            return 1 
+        else:
+            return inv_c_p
+    
+    def calc_cp (self, tsr_range, theta_p_range, 
                       r_min = .1, r_max = -1, dr = .1):
         """Optimization of the tip speed ratio and pitch angle for the 
         maximization of the power coefficient.
@@ -626,7 +715,7 @@ class BEM (Utils_BEM):
         
         """
         
-        #Prepare inputs
+        #Check inputs
         if r_min< 0 or r_min>self.R:
             raise ValueError("Lower bound must be within [0,R]")
         
@@ -637,7 +726,7 @@ class BEM (Utils_BEM):
         elif r_max>self.R:
             raise ValueError("Upper bound must be within [0,R]")
             
-        if r_min< 0:
+        if dr < 0:
             raise ValueError("Step width must be positive")
         elif dr>r_max-r_min:
             raise ValueError("Step width must be smaller than interval of"
@@ -648,7 +737,7 @@ class BEM (Utils_BEM):
         theta_p_range = np.array(theta_p_range)
         
         #Prepare dataset for the values
-        bem_ds = xr.Dataset(
+        ds_bem = xr.Dataset(
             {},
             coords={"r":r_range, 
                     "tsr":tsr_range,
@@ -657,26 +746,24 @@ class BEM (Utils_BEM):
         
         ds_bem_shape = [len(r_range), len(tsr_range), len(theta_p_range)]
         
-        bem_ds["a"] = (list(bem_ds.coords.keys()),
+        ds_bem["a"] = (list(ds_bem.coords.keys()),
                        np.empty(ds_bem_shape))
-        bem_ds["a_p"] = (list(bem_ds.coords.keys()),
+        ds_bem["a_p"] = (list(ds_bem.coords.keys()),
                          np.empty(ds_bem_shape))
-        bem_ds["p_T"] = (list(bem_ds.coords.keys()), 
+        ds_bem["dc_p"] = (list(ds_bem.coords.keys()), 
                          np.empty(ds_bem_shape))
-        
-        #Prepare dataset for the values
-        M_ds = xr.Dataset(
+        ds_cp = xr.Dataset(
             {},
             coords={"tsr":tsr_range,
                     "theta_p":theta_p_range}
             )
         
-        ds_m_shape = [len(tsr_range), len(theta_p_range)]
+        ds_cp_shape = [len(tsr_range), len(theta_p_range)]
         
-        M_ds["M_anal"] = (list(M_ds.coords.keys()), 
-                                 np.empty(ds_m_shape))
-        M_ds["M_num"] = (list(M_ds.coords.keys()), 
-                                np.empty(ds_m_shape))
+        ds_cp["cp_anal"] = (list(ds_cp.coords.keys()), 
+                                 np.empty(ds_cp_shape))
+        ds_cp["cp_num"] = (list(ds_cp.coords.keys()), 
+                                np.empty(ds_cp_shape))
         
 # =============================================================================
 #         #Plot power coefficent curve
@@ -686,26 +773,7 @@ class BEM (Utils_BEM):
 #         plt.savefig(fname="integ.svg",
 #                     bbox_inches = "tight")
 # =============================================================================
-        
-# =============================================================================
-#         #Multiprocessing with executor.submit
-#         with concurrent.futures.ProcessPoolExecutor() as executor:
-#             futures_anal = np.empty(ds_m_shape)
-#             futures_num = np.empty(ds_m_shape)
-#             for i_tsr, tsr in enumerate(tsr_range):
-#                 for i_tp, theta_p in enumerate(theta_p_range):
-#                     futures_anal [i_tsr, i_tp] = executor.submit(
-#                                                   self.integ_M_analytical, 
-#                                                   tsr=tsr, theta_p=theta_p, 
-#                                                   r_min=1, r_max=self.R-1)
-#                     
-#                     futures_num [i_tsr, i_tp] = executor.submit(
-#                                                   self.integ_M_numerical,
-#                                                   r_range = r_range,
-#                                                   tsr=tsr, 
-#                                                   theta_p=theta_p)
-# =============================================================================
-        
+ 
 # =============================================================================
 #         #Multiprocessing with executor.map
 #         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -715,12 +783,12 @@ class BEM (Utils_BEM):
 #             
 #             comb_len = len(tsr_comb)
 #             
-#             futures_anal = list(executor.map(self.integ_M_analytical,
+#             integrator_anal = list(executor.map(self.integ_dCp_analytical,
 #                                         tsr_comb,
 #                                         theta_p_comb,
 #                                         [r_min]*comb_len,
 #                                         [r_max]*comb_len))
-#             futures_num = list(executor.map(self.integ_M_numerical,
+#             integrator_num = list(executor.map(self.integ_dCp_numerical,
 #                                         tsr_comb,
 #                                         theta_p_comb,
 #                                         [r_min]*comb_len,
@@ -729,50 +797,71 @@ class BEM (Utils_BEM):
 #             
 #             for i in range(comb_len):
 # 
-#                 M_ds["M_num"].loc[dict(tsr=tsr_comb[i],
+#                 ds_cp["cp_num"].loc[dict(tsr=tsr_comb[i],
 #                                        theta_p=theta_p_comb[i])
-#                                   ] = futures_num[i][0]
-#                 bem_ds["p_T"].loc[dict(r = r_range, 
+#                                   ] = integrator_num[i][0]
+#                 ds_bem["a"].loc[dict(r = r_range, 
 #                                      tsr=tsr_comb[i],
 #                                      theta_p=theta_p_comb[i])
-#                                 ] = futures_num[i][1]
-#                 bem_ds["a"].loc[dict(r = r_range, 
+#                                 ] = integrator_num[i][2]
+#                 ds_bem["a_p"].loc[dict(r = r_range, 
 #                                      tsr=tsr_comb[i],
 #                                      theta_p=theta_p_comb[i])
-#                                 ] = futures_num[i][2]
-#                 bem_ds["a_p"].loc[dict(r = r_range, 
-#                                      tsr=tsr_comb[i],
-#                                      theta_p=theta_p_comb[i])
-#                                 ] = futures_num[i][3]
+#                                 ] = integrator_num[i][3]
 #                 
-#                 M_ds["M_anal"].loc[dict(tsr=tsr_comb[i],
+#                 ds_cp["cp_anal"].loc[dict(tsr=tsr_comb[i],
 #                                         theta_p=theta_p_comb[i])
-#                                    ] = futures_anal[i][0]
+#                                    ] = integrator_anal[i][0]
 # =============================================================================
           
-        #No Multiprocessing, just Iterating
-        for tsr in tsr_range:
-            for theta_p in theta_p_range:
-                M_anal, M_abserr = self.integ_M_analytical (tsr, theta_p, 
-                                                            r_min=r_min, 
-                                                            r_max=r_max)
-                M_num, p_T, a, a_p = self.integ_M_numerical (tsr, theta_p,
-                                                             r_min = r_min, 
-                                                             r_max = r_max, 
-                                                             dr = dr)
-                
-                #Save results to dataframe
-                bem_ds["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
-                bem_ds["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
-                
-                bem_ds["p_T"].loc[dict(tsr=tsr,theta_p=theta_p)] = p_T
-                
-                M_ds["M_anal"].loc[dict(tsr=tsr,theta_p=theta_p)] = M_anal
-                M_ds["M_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = M_num
-              
+# =============================================================================
+#         #No Multiprocessing, just Iterating
+#         for tsr in tsr_range:
+#             for theta_p in theta_p_range:
+#                 cp_anal, cp_abserr = self.integ_dCp_analytical (tsr, theta_p, 
+#                                                             r_min=r_min, 
+#                                                             r_max=r_max)
+#                 cp_num, dc_p, a, a_p = self.integ_dCp_numerical (tsr, theta_p,
+#                                                              r_min = r_min, 
+#                                                              r_max = r_max, 
+#                                                              dr = dr)
+#                 
+#                 #Save results to dataframe
+#                 ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
+#                 ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
+#                
+#                 ds_cp["cp_anal"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_anal
+#                 ds_cp["cp_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
+# =============================================================================
         
-        return M_ds, bem_ds
-                
+        return ds_cp, ds_bem
+        
+    def optimize_C_p (self, tsr_bounds, theta_p_bounds, r_min=0, r_max=-1):
+        #Check inputs
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+       
+        if np.isscalar(tsr_bounds) or not len(tsr_bounds)==2:
+            raise TypeError("Bounds for tip speed ratio must be an array-like "
+                            + "object with two elements for the lower and upper"
+                            + " bound respectively")
+        if np.isscalar(theta_p_bounds) or not len(theta_p_bounds)==2:
+            raise TypeError("Bounds for pitch angle must be an array-like "
+                            + "object with two elements for the lower and upper"
+                            + " bound respectively")
+        
+        res = scipy.optimize.minimize(self.inv_c_p_anal, 
+                                      x0 = (tsr_bounds[0], theta_p_bounds[0]), 
+                                      args = (r_min, r_max),
+                                      bounds = [tsr_bounds, theta_p_bounds])
+        return res
        
 #%% Main    
 if __name__ == "__main__":
@@ -800,11 +889,16 @@ if __name__ == "__main__":
     #                                              a=a, a_p=a_p)
     
     
-    tsr = np.arange(5,11)
-    theta_p=np.deg2rad(np.arange(-3,4))
-    start = perf_counter()
-    M_ds, bem_ds = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=theta_p, r_min = 1)
-    end = perf_counter()
+    # tsr = np.arange(5,11)
+    # theta_p=np.deg2rad(np.arange(-3,4))
+    # start = perf_counter()
+    # ds_cp, ds_bem = BEM_calculator.optimize_C_p (tsr_range=tsr, theta_p_range=theta_p, r_min = 1)
+    # end = perf_counter()
+    # print (f"Calculation took {end-start} s")
     
-    print (f"Calculation took {end-start} s")
+    opt_params = BEM_calculator.optimize_C_p (tsr_bounds= [5,10], 
+                                              theta_p_bounds=np.deg2rad([-3,4]), 
+                                              r_min=1, r_max=R-1)
+    
+    
     
