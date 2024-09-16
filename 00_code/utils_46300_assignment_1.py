@@ -26,7 +26,7 @@ class Utils_BEM():
         bld_file =  bld_file if bld_file else "./00_rsc/bladedat.txt"
         if not os.path.isfile(Path(bld_file)): 
             raise OSError(f"Blade data file {bld_file} not found")
-        self.bld_df = pd.DataFrame(columns = ["r", "c", "beta", "tcr"],
+        self.bld_df = pd.DataFrame(columns = ["r", "beta", "c", "tcr"],
                                    data=np.loadtxt(bld_file, skiprows=0))
         
         #Check input for the thickness of the airfoils

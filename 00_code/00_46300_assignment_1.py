@@ -177,10 +177,12 @@ class BEM (Utils_BEM):
         #Check inputs
         # Check if the dimensions of the input values match (must be either 
         # scalar values or array-like of equal shape)
-        r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, a_0, a_p_0)
+        r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, 
+                                                       a_0, a_p_0)
         
         #Check input for method
-        if not type(gaulert_method) == str or gaulert_method not in ['classic', "Madsen"]:
+        if not type(gaulert_method) == str \
+            or gaulert_method not in ['classic', "Madsen"]:
             raise ValueError("Method must be either 'Gaulert' or 'Madsen'")
         
         #Check whether some of the values are in the last 2% of the rotor
@@ -205,7 +207,7 @@ class BEM (Utils_BEM):
         #Interpolate thickness and chord length and beta
         c = np.interp(r, self.bld_df.r, self.bld_df.c)
         tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)/100
-        beta = np.interp(r, self.bld_df.r, self.bld_df.beta)
+        beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
         
         #Calculate the angle of attack
         phi = self.arctan_phi (a=a_0, a_p=a_p_0, r=r, tsr=tsr)
@@ -228,51 +230,63 @@ class BEM (Utils_BEM):
         F = 2/np.pi * np.arccos(np.exp(-f))
         
         #Calculate induction factors
-        
         #Thrust coefficient (Eq. 6.40)
-        C_T = np.divide(np.power(1-a_0, 2)*C_n*sigma,
+        dC_T = np.divide(np.power(1-a_0, 2)*C_n*sigma,
                         np.power(np.sin(phi),2))
         
         if gaulert_method == "classic":
             # Temporary axial induction factor
             if a_0 <.33:
-                a = C_T * np.divide (1,
-                                     4*F*(1-a_0))
+                a = np.divide (dC_T,
+                               4*F*(1-a_0))
                 
                 # Full formula in one line (C_T inserted)
                 # a_tmp = (sigma*C_n)/(4*F*np.power(np.sin(phi),2)) * (1-a_0)
             else:
-                a = C_T * np.divide (1,
-                                     4*F*(1-.25 * (5-3*a_0) * a_0))
+                a = np.divide (dC_T,
+                               4*F*(1-.25 * (5-3*a_0) * a_0))
             
             # Temporary tangential induction factor
             a_p = (1+a_p_0) * np.divide(sigma*C_t,
                                         4*F*np.sin(phi)*np.cos(phi)) 
-         
+            
+            #Append the radii which were >=.98*R (for these, p_T and p_N should be 
+            #zero)
+            if not np.isscalar(r):
+                a = np.append (a, np.zeros(r_end.shape))
+                a_p = np.append (a_p, np.zeros(r_end.shape))
+                F = np.append (F, np.zeros(r_end.shape))
+            
+            a = self.relax_parameter(x_tmp=a, x_0=a_0, f=f)
+            a_p = self.relax_parameter(x_tmp=a_p, x_0=a_p_0, f=f)
+            
         else:
-            a = .246*C_T + .0586*np.power(C_T,2) + .0883*np.power(C_T,3)
+            a = .246*dC_T + .0586*np.power(dC_T,2) + .0883*np.power(dC_T,3)
             
             #Tangential induction factor without corrections (Eq. 6.36):
             a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
-                       - 1)   
+                       - 1) 
+            
+            #Append the radii which were >=.98*R (for these, p_T and p_N should be 
+            #zero)
+            if not np.isscalar(r):
+                a = np.append (a, np.zeros(r_end.shape))
+                a_p = np.append (a_p, np.zeros(r_end.shape))
+                F = np.append (F, np.zeros(r_end.shape))
         
-        #Append the radii which were >=.98*R (for these, p_T and p_N should be 
-        #zero)
+        #Check results for invalid values
         if not np.isscalar(r):
-            a = np.append (a, np.zeros(r_end.shape))
-            a_p = np.append (a_p, np.zeros(r_end.shape))
-            F = np.append (F, np.zeros(r_end.shape))
-        
-        a = self.relax_parameter(x_tmp=a, x_0=a_0, f=f)
-        a_p = self.relax_parameter(x_tmp=a_p, x_0=a_p_0, f=f)
-        
-        if not np.isscalar(r):
+            if any([np.any(a<0 * a>=1), np.any(a_p<0)]):
+                print("Invalid a or a_p")
+            
             a[a<0] = 0
             a[a>=1] = .99999
             a_p[a_p<0] = 0
         else:
-            if a<0: a=0
-            elif a>=1: a =.99
+            if a<0: 
+                a=0
+            elif a>=1: 
+                a =.99
             
             if a_p<0:
                 a_p = 0
@@ -328,7 +342,7 @@ class BEM (Utils_BEM):
         a, a_p, F = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, 
                                           gaulert_method=gaulert_method)
-        n = 0
+        n = 1
         
         while (abs(a-a_0)>epsilon) or (abs(a_p-a_p_0)>epsilon): 
             if n>=1000:
@@ -697,7 +711,8 @@ class BEM (Utils_BEM):
             return inv_c_p
     
     def calc_cp (self, tsr_range, theta_p_range, 
-                      r_min = .1, r_max = -1, dr = .1):
+                      r_min = .1, r_max = -1, dr = .1,
+                      multiprocessing = True):
         """Optimization of the tip speed ratio and pitch angle for the 
         maximization of the power coefficient.
         
@@ -771,64 +786,62 @@ class BEM (Utils_BEM):
 #         plt.savefig(fname="integ.svg",
 #                     bbox_inches = "tight")
 # =============================================================================
- 
-        #Multiprocessing with executor.map
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
-            theta_p_comb = theta_p_comb.flatten()
-            tsr_comb = tsr_comb.flatten()
-            
-            comb_len = len(tsr_comb)
-            
-            # integrator_anal = list(executor.map(self.integ_dCp_analytical,
-            #                             tsr_comb,
-            #                             theta_p_comb,
-            #                             [r_min]*comb_len,
-            #                             [r_max]*comb_len))
-            integrator_num = list(executor.map(self.integ_dCp_numerical,
-                                        tsr_comb,
-                                        theta_p_comb,
-                                        [r_min]*comb_len,
-                                        [r_max]*comb_len,
-                                        [dr]*comb_len))
-            
-            for i in range(comb_len):
-
-                ds_cp["cp_num"].loc[dict(tsr=tsr_comb[i],
-                                       theta_p=theta_p_comb[i])
-                                  ] = integrator_num[i][0]
-                ds_bem["a"].loc[dict(r = r_range, 
-                                     tsr=tsr_comb[i],
-                                     theta_p=theta_p_comb[i])
-                                ] = integrator_num[i][2]
-                ds_bem["a_p"].loc[dict(r = r_range, 
-                                     tsr=tsr_comb[i],
-                                     theta_p=theta_p_comb[i])
-                                ] = integrator_num[i][3]
+        if multiprocessing:
+            #Multiprocessing with executor.map
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
+                theta_p_comb = theta_p_comb.flatten()
+                tsr_comb = tsr_comb.flatten()
                 
-                # ds_cp["cp_anal"].loc[dict(tsr=tsr_comb[i],
-                #                         theta_p=theta_p_comb[i])
-                #                    ] = integrator_anal[i][0]
-          
-# =============================================================================
-#         #No Multiprocessing, just Iterating
-#         for tsr in tsr_range:
-#             for theta_p in theta_p_range:
-#                 cp_anal, cp_abserr = self.integ_dCp_analytical (tsr, theta_p, 
-#                                                             r_min=r_min, 
-#                                                             r_max=r_max)
-#                 cp_num, dc_p, a, a_p = self.integ_dCp_numerical (tsr, theta_p,
-#                                                              r_min = r_min, 
-#                                                              r_max = r_max, 
-#                                                              dr = dr)
-#                 
-#                 #Save results to dataframe
-#                 ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
-#                 ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
-#                
-#                 ds_cp["cp_anal"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_anal
-#                 ds_cp["cp_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
-# =============================================================================
+                comb_len = len(tsr_comb)
+                
+                # integrator_anal = list(executor.map(self.integ_dCp_analytical,
+                #                             tsr_comb,
+                #                             theta_p_comb,
+                #                             [r_min]*comb_len,
+                #                             [r_max]*comb_len))
+                integrator_num = list(executor.map(self.integ_dCp_numerical,
+                                            tsr_comb,
+                                            theta_p_comb,
+                                            [r_min]*comb_len,
+                                            [r_max]*comb_len,
+                                            [dr]*comb_len))
+                
+                for i in range(comb_len):
+    
+                    ds_cp["cp_num"].loc[dict(tsr=tsr_comb[i],
+                                           theta_p=theta_p_comb[i])
+                                      ] = integrator_num[i][0]
+                    ds_bem["a"].loc[dict(r = r_range, 
+                                         tsr=tsr_comb[i],
+                                         theta_p=theta_p_comb[i])
+                                    ] = integrator_num[i][2]
+                    ds_bem["a_p"].loc[dict(r = r_range, 
+                                         tsr=tsr_comb[i],
+                                         theta_p=theta_p_comb[i])
+                                    ] = integrator_num[i][3]
+                    
+                    # ds_cp["cp_anal"].loc[dict(tsr=tsr_comb[i],
+                    #                         theta_p=theta_p_comb[i])
+                    #                    ] = integrator_anal[i][0]
+        else:
+            #No Multiprocessing, just Iterating
+            for tsr in tsr_range:
+                for theta_p in theta_p_range:
+                    cp_anal, cp_abserr = self.integ_dCp_analytical (tsr, theta_p, 
+                                                                r_min=r_min, 
+                                                                r_max=r_max)
+                    cp_num, dc_p, a, a_p = self.integ_dCp_numerical (tsr, theta_p,
+                                                                 r_min = r_min, 
+                                                                 r_max = r_max, 
+                                                                 dr = dr)
+                    
+                    #Save results to dataframe
+                    ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
+                    ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
+                   
+                    ds_cp["cp_anal"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_anal
+                    ds_cp["cp_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
         
         return ds_cp, ds_bem
         
@@ -887,17 +900,17 @@ if __name__ == "__main__":
     tsr = np.arange(5,11)
     theta_p=np.deg2rad(np.arange(-3,4))
     start = perf_counter()
-    ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, theta_p_range=theta_p, r_min = 1)
+    ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, theta_p_range=theta_p, r_min = 0, multiprocessing=False)
     end = perf_counter()
     print (f"Calculation took {end-start} s")
     
-    #Plot power coefficent curve
-    fig, ax = plt.subplots(figsize=(16, 10))
-    ax.plot(ds_cp.coords["tsr"].values, 
-            ds_cp["cp_num"].sel(theta_p=theta_p[0]).values) 
-    ax.grid()
-    plt.savefig(fname="integ.svg",
-                bbox_inches = "tight")
+    # #Plot power coefficent curve
+    # fig, ax = plt.subplots(figsize=(16, 10))
+    # ax.plot(ds_cp.coords["tsr"].values, 
+    #         ds_cp["cp_num"].sel(theta_p=theta_p[0]).values) 
+    # ax.grid()
+    # plt.savefig(fname="integ.svg",
+    #             bbox_inches = "tight")
     
     
     # opt_params = BEM_calculator.optimize_C_p (tsr_bounds= [5,10], 
