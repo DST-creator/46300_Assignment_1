@@ -26,7 +26,7 @@ class Utils_BEM():
         bld_file =  bld_file if bld_file else "./00_rsc/bladedat.txt"
         if not os.path.isfile(Path(bld_file)): 
             raise OSError(f"Blade data file {bld_file} not found")
-        self.bld_df = pd.DataFrame(columns = ["r", "c", "beta", "tcr"],
+        self.bld_df = pd.DataFrame(columns = ["r", "beta", "c", "tcr"],
                                    data=np.loadtxt(bld_file, skiprows=0))
         
         #Check input for the thickness of the airfoils
@@ -243,3 +243,64 @@ class Utils_BEM():
                         for i in range(tcr.size)])
         
         return C_l, C_d
+    
+    def check_radius_range (self, r_range, R):
+        """Checks inputs for a range of radii for completeness and 
+        reasonability.
+        
+        Parameters:
+            r_range (array-like):
+                A list containing the minimum & maximum radius and the step 
+                width. 
+                Alternatively, the default values of r_min=0, r_max=R and dr=.5
+                can be used
+            R (int or float):
+                The rotor radius
+                
+        Returns:
+            r_range (numpy array):
+                An array with values from r_min to r_max with step width dr
+            r_min (float):
+                lower boundary of the radius range
+            r_max (float):
+                upper boundary of the radius range
+            dr (float):
+                Step width of the radius
+        """
+        
+        #Check inputs for completeness
+        if len(r_range) == 0:
+            r_min = 1
+            r_max = R
+            dr = .5
+        elif len(r_range) == 1:
+            r_min = r_range[0]
+            r_max = R
+            dr = .5
+        elif len(r_range) == 2:
+            r_min, r_max = r_range
+            dr = .5
+        elif len(r_range) == 3:
+            r_min, r_max, dr = r_range
+        else:
+            raise ValueError("For radius range type 'bounds', the r_range "
+                             + "parameter needs to contain the bounds and "
+                             + "the step in the form [r_min, r_max, dr]")
+        
+        if r_min< 0 or r_min>R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>R:
+            raise ValueError("Upper bound must be within [0,R]")
+            
+        if dr< 0:
+            raise ValueError("Step width must be positive")
+        elif dr>r_max-r_min:
+            raise ValueError("Step width must be smaller than interval of"
+                             + "r_min and r_max")
+    
+        r_range = np.arange(r_min, r_max+dr/2, dr)
+        
+        return r_range, r_min, r_max, dr
