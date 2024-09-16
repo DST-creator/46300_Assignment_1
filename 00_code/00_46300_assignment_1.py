@@ -143,7 +143,7 @@ class BEM (Utils_BEM):
         return x
     
     def calc_ind_factors(self, r, tsr, theta_p = np.pi, 
-                         a_0 = 0, a_p_0 = 0,
+                         a_0 = 0, a_p_0 = 0, dC_T_0 = 0,
                          gaulert_method = "classic"):
         """Calulation of the induced velocity factors from the equations of the
         blade element momentum theory.
@@ -160,6 +160,8 @@ class BEM (Utils_BEM):
                 Start value for the axial induction factor a (default: 0)
             a_p_0  (scalar numerical value or array-like):
                 Start value for the tangential induction factor a' (default: 0)
+            dC_T_0 (scalar numerical value or array-like):
+                Start value for dC_T (only needed for Madsen method) (default: 0)
             gaulert_method (str):
                 Selection of the approach to use for the calculation of the 
                 induction factors.
@@ -185,14 +187,15 @@ class BEM (Utils_BEM):
         #Check input for method
         if not type(gaulert_method) == str \
             or gaulert_method not in ['classic', "Madsen"]:
-            raise ValueError("Method must be either 'Gaulert' or 'Madsen'")
+            raise ValueError("Gaulert method must be either 'classic' or "
+                             "'Madsen'")
         
         #Check whether some of the values are in the last 2% of the rotor
         # radius. If so, split the values and return a=a_p=-1 for them
         # later on. This region is known to be mathematically unstable
         if np.isscalar(r):
             if r>=.98*self.R:
-                return np.float32(0), np.float32(0), np.float32(0)
+                return np.zeros(4)
         else:
             # Radii for which p_T and p_N should be zero
             i_end = np.where(r>=.98*self.R)
@@ -263,6 +266,11 @@ class BEM (Utils_BEM):
             a_p = self.relax_parameter(x_tmp=a_p, x_0=a_p_0, f=.1)
             
         else:
+            dC_T = np.divide(np.power(1-a_0, 2)*C_n*sigma,
+                            np.power(np.sin(phi),2))
+            
+            dC_T = self.relax_parameter(x_tmp=dC_T, x_0=dC_T_0, f=.5)
+            
             a = .246*dC_T + .0586*np.power(dC_T,2) + .0883*np.power(dC_T,3)
             
             #Tangential induction factor without corrections (Eq. 6.36):
@@ -293,9 +301,10 @@ class BEM (Utils_BEM):
             if a_p<0:
                 a_p = 0
         
-        return a, a_p, F
+        return a, a_p, F, dC_T
     
-    def converge_BEM(self, r, tsr, theta_p = np.pi, a_0 = 0, a_p_0 = 0, 
+    def converge_BEM(self, r, tsr, theta_p = np.pi, 
+                     a_0 = 0, a_p_0 = 0, dC_T_0 =0,
                      epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
@@ -313,6 +322,8 @@ class BEM (Utils_BEM):
                 Start value for the axial induction factor a (default: 0)
             a_p_0  (scalar numerical value or array-like):
                 Start value for the tangential induction factor a' (default: 0)
+            dC_T_0 (scalar numerical value or array-like):
+                Start value for dC_T (only needed for Madsen method) (default: 0)
             epsilon (float):
                 Maximum error tolerance between consecutive iteration 
                 (default = 1e-5)
@@ -339,8 +350,8 @@ class BEM (Utils_BEM):
                 Number of iteration
             
         """
-        a, a_p, F = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
-                                          a_0=a_0, a_p_0=a_p_0, 
+        a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
+                                          a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0,
                                           gaulert_method=gaulert_method)
         n = 1
         
@@ -349,11 +360,12 @@ class BEM (Utils_BEM):
                 print(f"Maximum iteration number reached before convergence")
                 break
             a_0, a_p_0 = a, a_p
-            a, a_p, F = self.calc_ind_factors(r=r, tsr = tsr, 
-                                              theta_p=theta_p, 
-                                              a_0=a_0, a_p_0=a_p_0, 
-                                              gaulert_method =
-                                              gaulert_method)
+            a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr = tsr, 
+                                                    theta_p=theta_p, 
+                                                    a_0=a_0, a_p_0=a_p_0, 
+                                                    dC_T_0 = dC_T_0,
+                                                    gaulert_method =
+                                                    gaulert_method)
 
             n +=1
         
@@ -533,7 +545,8 @@ class BEM (Utils_BEM):
         
         return c_p, dc_p, a_arr, a_p_arr
     
-    def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
+    def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1, 
+                              gaulert_method = "classic"):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
             raise TypeError("Input values must be scalar")
         
@@ -552,7 +565,7 @@ class BEM (Utils_BEM):
     
         c_p, c_p_abserr = scipy.integrate.quad(self.dC_p, 
                                 r_min, r_max,
-                                args = (tsr, -1, -1, theta_p))
+                                args = (tsr, -1, -1, theta_p, gaulert_method))
         
         return c_p, c_p_abserr
     
@@ -715,8 +728,16 @@ class BEM (Utils_BEM):
         else:
             return inv_c_p
     
+    def integ_dCp_numerical_madsen (self, tsr, theta_p, r_range, 
+                             r_range_type = "values"):
+        return self.integ_dCp_numerical (tsr=tsr, theta_p=theta_p, 
+                                         r_range=r_range, 
+                                         r_range_type = r_range_type, 
+                                         gaulert_method = "Madsen")
+    
     def calc_cp (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
+                      gaulert_method = "classic",
                       multiprocessing = True):
         """Optimization of the tip speed ratio and pitch angle for the 
         maximization of the power coefficient.
@@ -725,8 +746,8 @@ class BEM (Utils_BEM):
             tsr_range (array-like):
                 Tip speed ratio range to consider
             theta_p_range (array-like):
-                Pitch angle range to consider
-                NOTE: Value is assumed to be specified in radians
+                Pitch angle range to consider [deg]
+                NOTE: Value is assumed to be specified in degrees
             
             
         Returns:
@@ -786,13 +807,24 @@ class BEM (Utils_BEM):
                 
                 # integrator_anal = list(executor.map(self.integ_dCp_analytical,
                 #                             tsr_comb,
-                #                             theta_p_comb,
+                #                             np.deg2rad(theta_p_comb),
                 #                             np.full(comb_len, r_range[0]),
-                #                             np.full(comb_len, r_range[-1])))
-                integrator_num = list(executor.map(self.integ_dCp_numerical,
-                                            tsr_comb,
-                                            theta_p_comb,
-                                            np.tile(r_range, (comb_len, 1))))
+                #                             np.full(comb_len, r_range[-1]),
+                #                             np.full(comb_len, gaulert_method)
+                #                             ))
+                
+                if gaulert_method == "classic":
+                    integrator_num = list(executor.map(self.integ_dCp_numerical,
+                                                tsr_comb,
+                                                np.deg2rad(theta_p_comb),
+                                                [r_range] * comb_len,
+                                                np.full(comb_len, "values")))
+                else:
+                    integrator_num = list(executor.map(self.integ_dCp_numerical_madsen,
+                                                tsr_comb,
+                                                np.deg2rad(theta_p_comb),
+                                                [r_range] * comb_len,
+                                                np.full(comb_len, "values")))
                 
                 for i in range(comb_len):
     
@@ -815,12 +847,14 @@ class BEM (Utils_BEM):
             #No Multiprocessing, just Iterating
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
-                    # cp_anal, cp_abserr = self.integ_dCp_analytical (tsr, theta_p, 
-                    #                                             r_min=r_range[0], 
-                    #                                             r_max=r_range[-1])
+                    # cp_anal, cp_abserr = self.integ_dCp_analytical (
+                    #     tsr, np.deg2rad(theta_p), 
+                    #     r_min=r_range[0],  r_max=r_range[-1],
+                    #     gaulert_method=gaulert_method)
+                    
                     cp_num, dc_p, a, a_p = self.integ_dCp_numerical (
-                        tsr=tsr, theta_p=theta_p, r_range=r_range, 
-                        r_range_type="values")
+                        tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range, 
+                        r_range_type="values", gaulert_method=gaulert_method)
                     
                     #Save results to dataframe
                     ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
@@ -832,7 +866,8 @@ class BEM (Utils_BEM):
         return ds_cp, ds_bem
         
     def optimize_C_p (self, tsr_bounds, theta_p_bounds, 
-                      r_range, r_range_type="bounds"):
+                      r_range, r_range_type="bounds",
+                      gaulert_method = "classic"):
         #Prepare inputs
         if r_range_type == "bounds":
             r_range, r_min, r_max, dr = self.check_radius_range (r_range, 
@@ -860,7 +895,7 @@ class BEM (Utils_BEM):
         res = scipy.optimize.minimize(self.inv_c_p, 
                                       x0 = (tsr_bounds[0], theta_p_bounds[0]), 
                                       args = (r_range, "values",
-                                              "classic", 
+                                              gaulert_method, 
                                               "num"),
                                       bounds = [tsr_bounds, theta_p_bounds])
         return res
@@ -923,16 +958,26 @@ if __name__ == "__main__":
     #                                           r_range=[], 
     #                                           r_range_type="bounds")
     
-    tsr = np.arange(5,10.5,1)
-    theta_p=np.deg2rad(np.arange(-3,4.5,1))
+    tsr = np.arange(5,10.5,.5)
+    theta_p=np.arange(-3,4.5,.5)
     start = perf_counter()
     ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
                                             theta_p_range=theta_p,
                                             r_range=BEM_calculator.bld_df.r,
                                             r_range_type = "values",
+                                            gaulert_method="Madsen",
                                             multiprocessing=True)
     end = perf_counter()
     print (f"Calculation took {end-start} s")
+    
+    #Maximum C_P and corresponding coordinates
+    c_P_arr= ds_cp["cp_num"]
+    c_P_max = c_P_arr.max().item()
+    # Find the coordinates where the maximum value occurs
+    max_coords = c_P_arr.where(c_P_arr==c_P_arr.max(), drop=True).coords
+
+    # Convert the coordinates to a dictionary for easy access
+    coord_dict = {dim: coord.values.item() for dim, coord in max_coords.items()}
     
     fig = plt.figure()
     ax = plt.axes(projection='3d')
