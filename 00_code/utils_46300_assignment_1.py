@@ -1,9 +1,44 @@
+import os
 import numpy as np
 import pandas as pd
 import xarray as xr
 from pathlib import Path
 
 class Utils_BEM():
+    def __init__(self, airfoil_files=[], bld_file="", t_airfoils = []):
+        #Load the turbine data (incl. checking the inputs for the files)
+        # Load the airfoil data (Lift, Drag and Momentum coefficient)
+        std_airfoil_files = ['./00_rsc/FFA-W3-2411.txt',
+                             './00_rsc/FFA-W3-301.txt',
+                             './00_rsc/FFA-W3-360.txt',
+                             './00_rsc/FFA-W3-480.txt',
+                             './00_rsc/FFA-W3-600.txt',
+                             './00_rsc/cylinder.txt']
+        
+        airfoil_files =  airfoil_files if airfoil_files else std_airfoil_files
+        for file in airfoil_files:
+            if not os.path.isfile(Path(file)): 
+                raise OSError(f"Airfoil file {file} not found")
+        self.airfoil_ds, self.airfoil_names = \
+            self.load_airfoils_as_xr (airfoil_files)
+        
+        # Load the blade design data
+        bld_file =  bld_file if bld_file else "./00_rsc/bladedat.txt"
+        if not os.path.isfile(Path(bld_file)): 
+            raise OSError(f"Blade data file {bld_file} not found")
+        self.bld_df = pd.DataFrame(columns = ["r", "c", "beta", "tcr"],
+                                   data=np.loadtxt(bld_file, skiprows=0))
+        
+        #Check input for the thickness of the airfoils
+        self.airfoil_names = self.airfoil_ds.coords["airfoil"].values
+        if (not type(t_airfoils) in [np.ndarray, list, tuple] 
+                or not len(t_airfoils)==len(std_airfoil_files))  \
+            or (type(t_airfoils) == dict 
+                and not set(t_airfoils.keys) == set(self.airfoil_names)):
+                t_airfoils = [24.1, 30.1, 36, 48, 60, 100]
+
+        self.t_airfoils = dict(zip(self.airfoil_names, t_airfoils)) 
+    
     @staticmethod
     def check_shape(var):
         """Checks the shape of a variable and converts it to a numpy array, if
@@ -27,8 +62,10 @@ class Utils_BEM():
             shape = var.shape
         elif type(var) == np.ndarray:
             shape = var.shape
-        elif type(var) in [int, float, np.float16, np.float32, np.float64]:
-            var = np.float32(var)
+        elif type(var) in [int, float, 
+                           np.int16, np.int32, np.int64, 
+                           np.float16, np.float32, np.float64]:
+            var = np.float64(var)
             shape = 1
         else:
             shape = -1
@@ -158,3 +195,51 @@ class Utils_BEM():
                 np.loadtxt(fpath, skiprows=0, usecols=[1,2,3]).T
 
         return airfoil_data, file_names
+    
+    def interp_coeffs (self, aoa, tcr):
+        """Interpolates the lift and drag coefficient from the look-up tables 
+        in the airfoil_ds.
+        Double interpolation is necessary to first interpolate the C_l & C_d
+        values for each airfoil given an angle of attack aoa. The second 
+        interpolation then interpolates between the airfoils based on their
+        thickness.
+        
+        Parameters:
+            aoa (scalar numerical value or array-like):
+                Angles of attack [deg]
+            tcr (scalar numerical value or array-like):
+                Thickness to chord length ratios of the airfoil [m]
+              
+        Returns:
+            C_l (scalar numerical value or array-like):
+                Lift coefficients 
+            C_d (scalar numerical value or array-like):
+                Drag coefficients 
+        """
+        
+        aoa = np.array(aoa).reshape(-1)
+        tcr = np.array(tcr).reshape(-1)
+        
+        #Determine lift and drag coefficients
+        cl_aoa=np.zeros([aoa.size,6])
+        cd_aoa=np.zeros([aoa.size,6])
+        
+        n_airfoils = len(self.airfoil_ds.coords["airfoil"].values)
+        
+        for i in range(n_airfoils):
+            name = self.airfoil_names[i]
+            cl_aoa[:,i]=np.interp (aoa,
+                                   self.airfoil_ds.coords["aoa"].values,
+                                   self.airfoil_ds["c_l"].loc[
+                                       {"airfoil":name}].values)
+            cd_aoa[:,i]=np.interp (aoa,
+                                   self.airfoil_ds.coords["aoa"].values,
+                                   self.airfoil_ds["c_d"].loc[
+                                       {"airfoil":name}].values)
+        
+        C_l = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cl_aoa[i,:]) 
+                        for i in range(tcr.size)])
+        C_d = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cd_aoa[i,:]) 
+                        for i in range(tcr.size)])
+        
+        return C_l, C_d
