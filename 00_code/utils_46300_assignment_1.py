@@ -255,3 +255,4 @@ class Utils_BEM():
         r_range = np.arange(r_min, r_max+dr/2, dr)
         
         return r_range, r_min, r_max, dr
+        

@@ -2,21 +2,15 @@
 #General imports
 import scipy
 import numpy as np
-import pandas as pd
 import xarray as xr
 import concurrent.futures
-
-#File handling imports
-import os
-from pathlib import Path
+from intersect import intersection
 
 #Plotting imports
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import Axes3D
-
-
 
 #Testing imports
 from time import perf_counter
@@ -44,17 +38,17 @@ mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'  # Optional, for m
 
 #%% BEM Calculator
 class BEM (Utils_BEM):
-    def __init__(self, R = 89.17, P = 10*1e6, 
+    def __init__(self, R = 89.17, P_rated = 10*1e6, 
                  v_in = 4, v_out = 25, rho=1.225, B=3,
                  airfoil_files=[], bld_file="", t_airfoils = []):
         super().__init__(airfoil_files=airfoil_files, 
                          bld_file=bld_file, 
                          t_airfoils = t_airfoils)
         
-        self.R = R          #[m] - Rotor radius 
-        self.P = P          #[W] - Rated power
-        self.rho = rho      #[kg/m^3] - Air density
-        self.B = B          #[-] - Number of blades
+        self.R = R              #[m] - Rotor radius 
+        self.P_rated = P_rated  #[W] - Rated power
+        self.rho = rho          #[kg/m^3] - Air density
+        self.B = B              #[-] - Number of blades
         
     def arctan_phi (self, a, a_p, r, tsr=-1, V_0=-1, omega = 1):
         """Calculate the angle between the plane of rotation and the relative 
@@ -559,21 +553,25 @@ class BEM (Utils_BEM):
         
         a_arr = np.array(np.zeros(len(r_range)))
         a_p_arr = np.array(np.zeros(len(r_range)))
+        F_arr = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
-            a_i, a_p_i, F, _, _ = self.converge_BEM(r=r, 
+            a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
                                                     theta_p=theta_p,
                                                     gaulert_method =
                                                     gaulert_method)
             a_arr[i] = a_i.item()
             a_p_arr[i] = a_p_i.item()
+            F_arr[i] = F_i.item()
         
         dc_p = self.dC_p (r=r_range, tsr=tsr, 
                           a=a_arr, a_p=a_p_arr, theta_p=theta_p)
+        dc_T = self.dC_T (r=r_range, a=a_arr, F=F_arr) 
         
         c_p = scipy.integrate.trapezoid(dc_p, r_range)
+        c_T = scipy.integrate.trapezoid(dc_T, r_range)
         
-        return c_p, dc_p, a_arr, a_p_arr
+        return c_p, c_T, a_arr, a_p_arr, F_arr
     
     def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1, 
                               gaulert_method = "classic"):
@@ -602,7 +600,7 @@ class BEM (Utils_BEM):
     def dC_p (self, r, tsr, a=-1, a_p=-1, theta_p=0, 
               gaulert_method = "classic"):
         """Calculatest dC_p (the infinitesimal power coefficient for a annular
-        blade ring at the radius r.
+        blade ring at the radius r).
         All turbine parameters, which are not part of the inputs, are read from
         the class attributes.
         
@@ -672,6 +670,69 @@ class BEM (Utils_BEM):
         dc_p = np.append (dc_p, np.zeros(r_end.shape))
         
         return dc_p
+    
+    def dC_T (self, r, a, F):
+        """Calculatest dC_p (the infinitesimal power coefficient for a annular
+        blade ring at the radius r).
+        All turbine parameters, which are not part of the inputs, are read from
+        the class attributes.
+        
+        Parameters:
+            r (1-D array-like):
+                Radii [m]
+            a (1-D array-like):
+                Axial induction factors [m]
+            F (1-D array-like):
+                Prandtl correction factors [m]
+            
+        Returns:
+            c_T (float):
+                The thrust coefficient
+        """
+        
+        #For radii in the last 2% of the rotor radius, the BEM does not return
+        #reliable results. This range is therefore neglected and manually set
+        #to 0
+        i_end = np.where(r>=.98*self.R)
+        r_end = r[i_end]
+        
+        # Radii for which the calculation needs to be performed
+        i_valid = np.where(r<.98*self.R)
+        r = r[i_valid]
+        if a.size>1: a = a[i_valid]
+        if F.size>1: F = F[i_valid]
+        
+        #Calculate dc_p and append 0 for all points in the last 2 % of the 
+        #rotor radius
+        dc_T = 8/(self.R**2)*r*a*(1-a)*F
+        dc_T = np.append (dc_T, np.zeros(r_end.shape))
+        
+        return dc_T
+        
+    
+    def integ_dcT (self, r, a, F):
+        """Integrates the function for dC_T over r for given values of the 
+        radius, the axial induction factor a and the Prandtl correction 
+        factor F
+        
+        Parameters:
+            r (1-D array-like):
+                Radii [m]
+            a (1-D array-like):
+                Axial induction factors [m]
+            F (1-D array-like):
+                Prandtl correction factors [m]
+            
+        Returns:
+            c_T (float):
+                The thrust coefficient
+        """
+        
+        c_T = scipy.integrate.trapezoid(8/(self.R**2)*r*a*(1-a)*F, 
+                                        r)
+        
+        return c_T
+        
     
     def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
@@ -830,9 +891,9 @@ class BEM (Utils_BEM):
                        np.empty(ds_bem_shape))
         ds_bem["a_p"] = (list(ds_bem.coords.keys()),
                          np.empty(ds_bem_shape))
-        
-        ds_bem["dc_p"] = (list(ds_bem.coords.keys()), 
+        ds_bem["F"] = (list(ds_bem.coords.keys()),
                          np.empty(ds_bem_shape))
+        
         ds_cp = xr.Dataset(
             {},
             coords={"tsr":tsr_range,
@@ -844,6 +905,8 @@ class BEM (Utils_BEM):
         ds_cp["cp_anal"] = (list(ds_cp.coords.keys()), 
                                  np.empty(ds_cp_shape))
         ds_cp["cp_num"] = (list(ds_cp.coords.keys()), 
+                                np.empty(ds_cp_shape))
+        ds_cp["cT_num"] = (list(ds_cp.coords.keys()), 
                                 np.empty(ds_cp_shape))
         
         if multiprocessing:
@@ -880,6 +943,9 @@ class BEM (Utils_BEM):
                     ds_cp["cp_num"].loc[dict(tsr=tsr_comb[i],
                                            theta_p=theta_p_comb[i])
                                       ] = integrator_num[i][0]
+                    ds_cp["cT_num"].loc[dict(tsr=tsr_comb[i],
+                                           theta_p=theta_p_comb[i])
+                                      ] = integrator_num[i][1]
                     ds_bem["a"].loc[dict(r = r_range, 
                                          tsr=tsr_comb[i],
                                          theta_p=theta_p_comb[i])
@@ -888,6 +954,10 @@ class BEM (Utils_BEM):
                                          tsr=tsr_comb[i],
                                          theta_p=theta_p_comb[i])
                                     ] = integrator_num[i][3]
+                    ds_bem["F"].loc[dict(r = r_range, 
+                                         tsr=tsr_comb[i],
+                                         theta_p=theta_p_comb[i])
+                                    ] = integrator_num[i][4]
                     
                     # ds_cp["cp_anal"].loc[dict(tsr=tsr_comb[i],
                     #                         theta_p=theta_p_comb[i])
@@ -901,16 +971,18 @@ class BEM (Utils_BEM):
                     #     r_min=r_range[0],  r_max=r_range[-1],
                     #     gaulert_method=gaulert_method)
                     
-                    cp_num, _, a, a_p = self.integ_dCp_numerical (
+                    cp_num, cT_num, a, a_p, F = self.integ_dCp_numerical (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range, 
                         r_range_type="values", gaulert_method=gaulert_method)
                     
                     #Save results to dataframe
                     ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
                     ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
+                    ds_bem["F"].loc[dict(tsr=tsr,theta_p=theta_p)] = F
                    
                     # ds_cp["cp_anal"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_anal
                     ds_cp["cp_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
+                    ds_cp["cT_num"].loc[dict(tsr=tsr,theta_p=theta_p)] = cT_num
         
         return ds_cp, ds_bem
         
@@ -952,20 +1024,23 @@ class BEM (Utils_BEM):
 #%% Main    
 if __name__ == "__main__":
     R = 89.17
+    B = 3 
+    P_rated = 10.64*1e6
+    v_in = 4
+    v_out = 25
+    rho = 1.225
     
 # ####################################
 #     R=31
 #     tsr = 2.61*R/8
 # ####################################
     
-
-
     BEM_calculator =  BEM (R = R,
-                           B = 3,
-                           P = 10*1e6,
-                           v_in = 4,
-                           v_out = 25,
-                           rho = 1.225)
+                           B = B,
+                           P_rated = P_rated,
+                           v_in = v_in,
+                           v_out = v_out,
+                           rho = rho)
     
 
     #Test for BEM Exercise
@@ -997,12 +1072,8 @@ if __name__ == "__main__":
     
     
     #%% Task 1
-    # Find optimum values
-    # opt_params = BEM_calculator.optimize_C_p (tsr_bounds= [5,10], 
-    #                                           theta_p_bounds=np.deg2rad([-3,4]),
-    #                                           r_range=[], 
-    #                                           r_range_type="bounds")
     
+    #Calculate C_p values
     tsr_l = 5
     tsr_u = 10
     dtsr = .5
@@ -1011,12 +1082,14 @@ if __name__ == "__main__":
     theta_p_u = 4 
     dtheta_p = .5
     
+    r_range = BEM_calculator.bld_df.r
     tsr = np.arange(tsr_l, tsr_u + dtsr, dtsr)
     theta_p=np.arange(theta_p_l, theta_p_u + dtheta_p , dtheta_p)
+    
     start = perf_counter()
     ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
                                             theta_p_range=theta_p,
-                                            r_range=BEM_calculator.bld_df.r,
+                                            r_range=r_range,
                                             r_range_type = "values",
                                             gaulert_method="classic",
                                             multiprocessing=True)
@@ -1028,10 +1101,11 @@ if __name__ == "__main__":
     c_P_max = c_P_arr.max().item()
     # Find the coordinates where the maximum value occurs
     max_coords = c_P_arr.where(c_P_arr==c_P_arr.max(), drop=True).coords
-
     # Convert the coordinates to a dictionary for easy access
-    coord_dict = {dim: coord.values.item() for dim, coord in max_coords.items()}
+    coord_dict = {dim: round(coord.values.item(),3) for dim, coord in max_coords.items()}
+    tsr_max, theta_p_max = coord_dict.values()
     
+    #Plot C_p
     fig = plt.figure(figsize=(10,10))
     ax = plt.axes(projection='3d')
     ax.set_xlabel(r'$\lambda$')
@@ -1041,7 +1115,77 @@ if __name__ == "__main__":
     Z = ds_cp["cp_num"].values.T
     ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
                 cmap="plasma", edgecolor='none')
-    ax.set_xticks(np.arange(tsr_l,tsr_u))
-    ax.set_yticks(np.arange(theta_p_l,theta_p_u))
-    ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
-    plt.savefig(fname="test.svg")
+    ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
+    ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
+    # ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
+    plt.savefig(fname="C_P_max_surface_plot.svg")
+    
+    
+    #Plot C_T
+    fig = plt.figure(figsize=(10,10))
+    ax = plt.axes(projection='3d')
+    ax.set_xlabel(r'$\lambda$')
+    ax.set_ylabel(r'$\theta_p$')
+    ax.set_zlabel(r'$C_T$')
+    X, Y = np.meshgrid(tsr, theta_p)
+    Z = ds_cp["cT_num"].values.T
+    ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+                cmap="plasma", edgecolor='none')
+    ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
+    ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
+    # ax.set_title(r'$C_T$ over $\lambda$ and $\theta_p$')
+    plt.savefig(fname="C_T_surface_plot.svg")
+
+
+#%% Task 2
+    
+    #Calculate rated wind speed
+    V_0 = np.arange(v_in, 12, .25)
+    P = c_P_max*.5*rho*np.pi*R**2*V_0**3
+    omega = tsr_max*V_0/R
+    V_rated = intersection(V_0, P, [v_in, v_out], [P_rated, P_rated])[0][0]
+    omega_max = tsr_max*V_rated/R
+    rpm_max = omega_max * 60 / (2*np.pi)
+    
+    # Plot Power over wind speed
+    fig, ax = plt.subplots(figsize=(16, 10))
+    ax.plot(V_0, P/1e6, label = "Power curve")
+    ax.axvline(V_rated, ls="--", lw=1.5, color="k")
+    # ax.text(0.2, P_rated/1e6*1.03, '$P_{rated}$', color='k', va='center', ha='center',
+    #     transform=ax.get_yaxis_transform())
+    ax.axhline(P_rated/1e6, ls="--", lw=1.5, color="k")
+    # ax.text(V_rated*.98, .2, '$V_{rated}$', color='k', va='center', ha='center',
+    #     transform=ax.get_xaxis_transform(), rotation="vertical")
+    # ax.set_title('Power curve')
+    ax.set_xlabel('$V_0\:[m/s]$')
+    ax.set_ylabel('$P\:[MW]$')
+    ax.grid()
+    
+    plt.savefig(fname="Power_curve.svg",
+                bbox_inches = "tight")
+    
+    
+    # Plot omega over wind speed
+    fig, ax = plt.subplots(figsize=(16, 10))
+    ax.plot(V_0, omega, label = "Power curve")
+    ax.axvline(V_rated, ls="--", lw=1.5, color="k")
+    # ax.set_title('$\omega$ over the wind speed')
+    ax.set_xlabel('$V_0\:[m/s]$')
+    ax.set_ylabel('$\omega\:[{rad}/s]$')
+    ax.grid()
+    
+    plt.savefig(fname="omega_over_V0.svg",
+                bbox_inches = "tight")
+
+#%% Task 3
+
+
+
+
+
+
+
+
+
+
+
