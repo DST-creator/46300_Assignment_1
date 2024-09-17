@@ -17,6 +17,7 @@ from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import Axes3D
 
 
+
 #Testing imports
 from time import perf_counter
 
@@ -33,6 +34,10 @@ mpl.rcParams['axes.labelsize'] = 20
 mpl.rcParams['axes.titlesize'] = 25
 mpl.rcParams['legend.fontsize'] = 20
 mpl.rcParams['figure.subplot.top'] = .94    #Distance between suptitle and subplots
+mpl.rcParams['xtick.major.pad'] = 5         
+mpl.rcParams['ytick.major.pad'] = 5
+# mpl.rcParams['ztick.major.pad'] = 5
+mpl.rcParams['axes.labelpad'] = 20
 mpl.rcParams['text.usetex'] = True          #Use standard latex font
 mpl.rcParams['font.family'] = 'serif'  # LaTeX default font family
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'  # Optional, for math symbols
@@ -84,8 +89,8 @@ class BEM (Utils_BEM):
                velocity [rad]
         """
         
-        #Check the input values
-        a, a_p, r, tsr, V_0, omega = self.check_dims (a, a_p, r, tsr, V_0, omega)
+        # #Check the input values
+        # a, a_p, r, tsr, V_0, omega = self.check_dims (a, a_p, r, tsr, V_0, omega)
         
         if np.any(a>=1) or np.any(a<0):
             raise ValueError("Axial induction factor must be lie within [0,1[")
@@ -136,18 +141,19 @@ class BEM (Utils_BEM):
             x (float or array-like):
                 Relaxed value for x
         """
-        #Check inputs
-        # Check if the dimensions of the input values match (must be either 
-        # scalar values or array-like of equal shape)
-        x_tmp, x_0, f = self.check_dims (x_tmp, x_0, f)
+        # #Check inputs
+        # # Check if the dimensions of the input values match (must be either 
+        # # scalar values or array-like of equal shape)
+        # x_tmp, x_0, f = self.check_dims (x_tmp, x_0, f)
         
         #Relax value
         x = f*x_tmp + (1-f)*x_0 
         return x
     
     def calc_ind_factors(self, r, tsr, theta_p = np.pi, 
-                         a_0 = 0, a_p_0 = 0, dC_T_0 = 0, f=.1,
-                         gaulert_method = "classic"):
+                         a_0 = 0, a_p_0 = 0, dC_T_0 = 0, 
+                         c=-1, tcr=-1, beta=-np.inf, sigma=-1,
+                         f=.1, gaulert_method = "classic"):
         """Calulation of the induced velocity factors from the equations of the
         blade element momentum theory.
         
@@ -181,11 +187,11 @@ class BEM (Utils_BEM):
             F (scalar numerical value or array-like):
                 Prandtl correction factor
         """
-        #Check inputs
-        # Check if the dimensions of the input values match (must be either 
-        # scalar values or array-like of equal shape)
-        r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, 
-                                                       a_0, a_p_0)
+        # #Check inputs
+        # # Check if the dimensions of the input values match (must be either 
+        # # scalar values or array-like of equal shape)
+        # r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, 
+        #                                                a_0, a_p_0)
 
         #Check input for method
         if not type(gaulert_method) == str \
@@ -213,17 +219,18 @@ class BEM (Utils_BEM):
             if theta_p.size>1: theta_p = theta_p[i_valid]
         
         #Interpolate thickness and chord length and beta
-        c = np.interp(r, self.bld_df.r, self.bld_df.c)
-        tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)/100
-        beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
+        if c == -1:
+            c = np.interp(r, self.bld_df.r, self.bld_df.c)
+        if tcr == -1:
+            tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
+        if beta == -np.inf:
+            beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
         
         #Calculate the angle of attack
         phi = self.arctan_phi (a=a_0, a_p=a_p_0, r=r, tsr=tsr)
         theta = theta_p + beta
         
         aoa = phi-theta
-        
-        #Determine lift and drag coefficients
         C_l, C_d = self.interp_coeffs (aoa=np.rad2deg(aoa), tcr=tcr)
         
 # ######################################
@@ -237,7 +244,8 @@ class BEM (Utils_BEM):
         C_t = C_l*np.sin(phi) - C_d*np.cos(phi)
         
         #Calculate solidity
-        sigma = np.divide(c*self.B, 2*np.pi*r)
+        if sigma == -1:
+            sigma = np.divide(c*self.B, 2*np.pi*r)
         
         #Calculate Prandtl correction factor
         f_corr = self.B/2 * (self.R-r)/(r*np.sin(phi)) 
@@ -303,21 +311,21 @@ class BEM (Utils_BEM):
             a_p[a_p<0] = 0
         else:
             if a<0: 
-                a=0
-                print(f"Warning: a<0for r = {r}")
+                a=np.array([0])
+                # print(f"Warning: a<0for r = {r}")
             elif a>=1: 
-                a =.99
-                print(f"Warning: a>1 for r = {r}")
+                a =np.array([.99])
+                # print(f"Warning: a>1 for r = {r}")
             
             if a_p<0:
-                a_p = 0
-                print(f"Warning: a_p>1 for r = {r}")
+                a_p = np.array([0])
+                # print(f"Warning: a_p<0 for r = {r}")
         
         return a, a_p, F, dC_T
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
-                     a_0 = 0.2, a_p_0 = 0.02, dC_T_0 =0,
-                     epsilon=1e-6, f = .1, gaulert_method = "classic"):
+                     a_0 = 0.3, a_p_0 = 0.0, dC_T_0 = 0,
+                     epsilon=1e-4, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
         Note: If the values do not converge within 1000 iterations, the 
@@ -362,12 +370,18 @@ class BEM (Utils_BEM):
                 Number of iteration
             
         """
+        c = np.interp(r, self.bld_df.r, self.bld_df.c)
+        tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
+        beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
+        sigma = np.divide(c*self.B, 2*np.pi*r)
+        
         a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0,
+                                          c=c, tcr = tcr, beta=beta, sigma=sigma,
                                           gaulert_method=gaulert_method)
         n = 1
         
-        while (abs(a-a_0)>epsilon) or (abs(a_p-a_p_0)>epsilon): 
+        while (abs(a-a_0)>epsilon*a) or (abs(a_p-a_p_0)>epsilon*a_p): 
             if n>=1000:
                 print(f"Maximum iteration number reached before convergence")
                 break
@@ -377,156 +391,156 @@ class BEM (Utils_BEM):
                                                     a_0=a_0, a_p_0=a_p_0, 
                                                     dC_T_0 = dC_T_0,
                                                     f = f,
+                                                    c=c, 
+                                                    tcr = tcr, 
+                                                    beta=beta, 
+                                                    sigma=sigma,
                                                     gaulert_method =
                                                     gaulert_method)
 
             n +=1
         
-        if n<=500:
-            print(f"Calculation stopped after {n} iteration")
+        # if n<=500:
+        #     print(f"Calculation stopped after {n} iteration")
         
         conv_res = (abs(a-a_0), abs(a_p-a_p_0))
         
         return a, a_p, F, conv_res, n
     
-# =============================================================================
-#     def calc_local_forces (self, r, tsr, V_0, a=-1, a_p=-1, theta_p=np.pi):
-#         """Calculates the local forces for given turbine parameters.
-#         All turbine parameters, which are not part of the inputs, are read from
-#         the class attributes.
-#         
-#         Parameters:
-#             r (scalar numerical value or array-like):
-#                 Radii at which to calculate the  [m]
-#             tsr (scalar numerical value or array-like):
-#                 Tip speed ratio of the turbine 
-#             V_0 (scalar numerical value or array-like):
-#                 Free flow velocity [m/s] 
-#             a (scalar numerical value or array-like):
-#                 Axial induction factor a.
-#                 If -1 is used for this parameter, then the axial and tangential
-#                 induction factors are calculated from the BEM method
-#             a_p (scalar numerical value or array-like):
-#                 Tangential induction factor a'.
-#                 If -1 is used for this parameter, then the axial and tangential
-#                 induction factors are calculated from the BEM method
-#             theta_p (scalar numerical value or array-like):
-#                 Pitch angle of the blades [rad]
-#                 NOTE: Value is assumed to be specified in radians
-#             
-#         Returns:
-#             p_N (np.float or np.ndarray): 
-#                 Local normal force in N/m
-#             p_T (np.float or np.ndarray): 
-#                 Local tangential force in N/m
-#         """
-#         
-#         #Check inputs
-#         # Check if the dimensions of the input values match (must be either 
-#         # scalar values or array-like of equal shape)
-#         a, a_p, tsr, theta_p = self.check_dims (a, a_p, tsr, theta_p)
-#         
-#         r = np.array(r)
-#         a = np.array(a)
-#         a_p = np.array(a_p)
-#         tsr = np.array(tsr)
-#         theta_p = np.array(theta_p)
-#         
-#         #Check whether some of the values are in the last 2% of the rotor
-#         # radius. If so, split the values and return p_T=0 and p_N = 0 for them
-#         # later on. This region is known to be mathematically unstable
-#         if r.size>1:
-#             # Radii for which p_T and p_N should be zero
-#             i_end = np.where(r>=.98*self.R)
-#             r_end = r[i_end]
-#             
-#             # Radii for which the calculation needs to be performed
-#             i_valid = np.where(r<.98*self.R)
-#             r = r[i_valid]
-#             if a.size>1: a = a[i_valid]
-#             if a_p.size>1: a_p = a_p[i_valid]
-#             if tsr.size>1: tsr = tsr[i_valid]
-#             if theta_p.size>1: theta_p = theta_p[i_valid]
-#         else:
-#             if r>=.98*self.R:
-#                 return np.float32(0), np.float32(0)
-#         
-#         
-#         #Check if a or a_p have a default value. If so, calculate them using BEM
-#         if any(np.any(var==-1) for var in [a, a_p]):
-#             a, a_p, F, _, _ = self.converge_BEM(r=r, tsr=tsr, theta_p=theta_p)
-#         
-#         #Check if there are any zero values in a, a_p and tsr (not allowed)
-#         if not all(np.all(var) for var in [a, a_p, tsr]):
-#             raise ValueError("No zero values allowed in a, a* and tsr")
-# 
-#         #Calculate the angle of attack
-#         phi = self.arctan_phi (a=a, a_p=a_p, r=r, tsr=tsr)
-#         theta = theta_p + self.beta
-#         
-#         aoa = phi-theta
-#         
-#         #Calculate relative velocity
-#         omega = tsr*V_0/self.R
-#         V_rel = np.sqrt((np.power(V_0*(1-a),2) 
-#                         + np.power(
-#                             np.multiply(
-#                                 np.multiply(omega,r),
-#                                 (1+a_p)),
-#                             2)).astype(float)
-#                         )
-#         
-#         #Calculate local lift and drag
-#         l = .5*self.rho*np.power(V_rel, 2)*self.c*self.C_l
-#         d = .5*self.rho*np.power(V_rel, 2)*self.c*self.C_d
-#         
-#         #Calculate local normal and tangential forces
-#         p_N = l*np.cos(phi) + d*np.sin(phi)
-#         p_T = l*np.sin(phi) - d*np.cos(phi)
-#         
-#         #Append the radii which were >=.98*R (for these, p_T and p_N should be 
-#         #zero)
-#         if r.size>1:
-#             p_N = np.append (p_N, np.zeros(r_end.shape))
-#             p_T = np.append (p_T, np.zeros(r_end.shape))
-#         
-#         return p_N, p_T
-# =============================================================================
+    def calc_local_forces (self, r, tsr, V_0, a=-1, a_p=-1, theta_p=np.pi):
+        """Calculates the local forces for given turbine parameters.
+        All turbine parameters, which are not part of the inputs, are read from
+        the class attributes.
+        
+        Parameters:
+            r (scalar numerical value or array-like):
+                Radii at which to calculate the  [m]
+            tsr (scalar numerical value or array-like):
+                Tip speed ratio of the turbine 
+            V_0 (scalar numerical value or array-like):
+                Free flow velocity [m/s] 
+            a (scalar numerical value or array-like):
+                Axial induction factor a.
+                If -1 is used for this parameter, then the axial and tangential
+                induction factors are calculated from the BEM method
+            a_p (scalar numerical value or array-like):
+                Tangential induction factor a'.
+                If -1 is used for this parameter, then the axial and tangential
+                induction factors are calculated from the BEM method
+            theta_p (scalar numerical value or array-like):
+                Pitch angle of the blades [rad]
+                NOTE: Value is assumed to be specified in radians
+            
+        Returns:
+            p_N (np.float or np.ndarray): 
+                Local normal force in N/m
+            p_T (np.float or np.ndarray): 
+                Local tangential force in N/m
+        """
+        
+        #Check inputs
+        # Check if the dimensions of the input values match (must be either 
+        # scalar values or array-like of equal shape)
+        a, a_p, tsr, theta_p = self.check_dims (a, a_p, tsr, theta_p)
+        
+        r = np.array(r)
+        a = np.array(a)
+        a_p = np.array(a_p)
+        tsr = np.array(tsr)
+        theta_p = np.array(theta_p)
+        
+        #Check whether some of the values are in the last 2% of the rotor
+        # radius. If so, split the values and return p_T=0 and p_N = 0 for them
+        # later on. This region is known to be mathematically unstable
+        if r.size>1:
+            # Radii for which p_T and p_N should be zero
+            i_end = np.where(r>=.98*self.R)
+            r_end = r[i_end]
+            
+            # Radii for which the calculation needs to be performed
+            i_valid = np.where(r<.98*self.R)
+            r = r[i_valid]
+            if a.size>1: a = a[i_valid]
+            if a_p.size>1: a_p = a_p[i_valid]
+            if tsr.size>1: tsr = tsr[i_valid]
+            if theta_p.size>1: theta_p = theta_p[i_valid]
+        else:
+            if r>=.98*self.R:
+                return np.float32(0), np.float32(0)
+        
+        
+        #Check if a or a_p have a default value. If so, calculate them using BEM
+        if any(np.any(var==-1) for var in [a, a_p]):
+            a, a_p, F, _, _ = self.converge_BEM(r=r, tsr=tsr, theta_p=theta_p)
+        
+        #Check if there are any zero values in a, a_p and tsr (not allowed)
+        if not all(np.all(var) for var in [a, a_p, tsr]):
+            raise ValueError("No zero values allowed in a, a* and tsr")
+
+        #Calculate the angle of attack
+        phi = self.arctan_phi (a=a, a_p=a_p, r=r, tsr=tsr)
+        theta = theta_p + self.beta
+        
+        aoa = phi-theta
+        
+        #Calculate relative velocity
+        omega = tsr*V_0/self.R
+        V_rel = np.sqrt((np.power(V_0*(1-a),2) 
+                        + np.power(
+                            np.multiply(
+                                np.multiply(omega,r),
+                                (1+a_p)),
+                            2)).astype(float)
+                        )
+        
+        #Calculate local lift and drag
+        l = .5*self.rho*np.power(V_rel, 2)*self.c*self.C_l
+        d = .5*self.rho*np.power(V_rel, 2)*self.c*self.C_d
+        
+        #Calculate local normal and tangential forces
+        p_N = l*np.cos(phi) + d*np.sin(phi)
+        p_T = l*np.sin(phi) - d*np.cos(phi)
+        
+        #Append the radii which were >=.98*R (for these, p_T and p_N should be 
+        #zero)
+        if r.size>1:
+            p_N = np.append (p_N, np.zeros(r_end.shape))
+            p_T = np.append (p_T, np.zeros(r_end.shape))
+        
+        return p_N, p_T
     
-# =============================================================================
-#     def calc_local_tang_force (self, r, tsr, V_0, a=-1, a_p=-1, theta_p=np.pi):
-#         """Calculates the local tangential force for given turbine parameters.
-#         All turbine parameters, which are not part of the inputs, are read from
-#         the class attributes.
-#         
-#         Parameters:
-#             r (scalar numerical value or array-like):
-#                 Radii at which to calculate the values  [m]
-#             tsr (scalar numerical value or array-like):
-#                 Tip speed ratio of the turbine 
-#             V_0 (scalar numerical value or array-like):
-#                 Free flow velocity [m/s]
-#             a (scalar numerical value or array-like):
-#                 Axial induction factor a.
-#                 If -1 is used for this parameter, then the axial and tangential
-#                 induction factors are calculated from the BEM method
-#             a_p (scalar numerical value or array-like):
-#                 Tangential induction factor a'.
-#                 If -1 is used for this parameter, then the axial and tangential
-#                 induction factors are calculated from the BEM method
-#             theta_p (scalar numerical value or array-like):
-#                 Pitch angle of the blades [rad]
-#                 NOTE: Value is assumed to be specified in radians
-#             
-#         Returns:
-#             p_T (np.float or np.ndarray): 
-#                 Local tangential force in N/m
-#         """
-#         
-#         p_N, p_T = self.calc_local_forces (r, tsr, a=-1, a_p=-1, theta_p=np.pi)
-#         
-#         return p_T
-# =============================================================================
+    def calc_local_tang_force (self, r, tsr, V_0, a=-1, a_p=-1, theta_p=np.pi):
+        """Calculates the local tangential force for given turbine parameters.
+        All turbine parameters, which are not part of the inputs, are read from
+        the class attributes.
+        
+        Parameters:
+            r (scalar numerical value or array-like):
+                Radii at which to calculate the values  [m]
+            tsr (scalar numerical value or array-like):
+                Tip speed ratio of the turbine 
+            V_0 (scalar numerical value or array-like):
+                Free flow velocity [m/s]
+            a (scalar numerical value or array-like):
+                Axial induction factor a.
+                If -1 is used for this parameter, then the axial and tangential
+                induction factors are calculated from the BEM method
+            a_p (scalar numerical value or array-like):
+                Tangential induction factor a'.
+                If -1 is used for this parameter, then the axial and tangential
+                induction factors are calculated from the BEM method
+            theta_p (scalar numerical value or array-like):
+                Pitch angle of the blades [rad]
+                NOTE: Value is assumed to be specified in radians
+            
+        Returns:
+            p_T (np.float or np.ndarray): 
+                Local tangential force in N/m
+        """
+        
+        p_N, p_T = self.calc_local_forces (r, tsr, a=-1, a_p=-1, theta_p=np.pi)
+        
+        return p_T
     
     def integ_dCp_numerical (self, tsr, theta_p, r_range, 
                              r_range_type = "values", 
@@ -546,12 +560,11 @@ class BEM (Utils_BEM):
         a_arr = np.array(np.zeros(len(r_range)))
         a_p_arr = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
-            a_i, a_p_i, _, _, _ = self.converge_BEM(r=r, 
+            a_i, a_p_i, F, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
                                                     theta_p=theta_p,
                                                     gaulert_method =
                                                     gaulert_method)
-            
             a_arr[i] = a_i.item()
             a_p_arr[i] = a_p_i.item()
         
@@ -562,31 +575,29 @@ class BEM (Utils_BEM):
         
         return c_p, dc_p, a_arr, a_p_arr
     
-# =============================================================================
-#     def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1, 
-#                               gaulert_method = "classic"):
-#         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
-#             raise TypeError("Input values must be scalar")
-#         
-#         if r_min< 0 or r_min>self.R:
-#             raise ValueError("Lower bound must be within [0,R]")
-#         
-#         if r_max == -1:
-#             r_max = self.R
-#         elif r_min>r_max:
-#             raise ValueError("Upper bound must be higher than lower bound")
-#         elif r_max>self.R:
-#             raise ValueError("Upper bound must be within [0,R]")
-#         
-#         if tsr <=0:
-#             raise ValueError("Tip speed ratio must be positive and non-zero")
-#     
-#         c_p, c_p_abserr = scipy.integrate.quad(self.dC_p, 
-#                                 r_min, r_max,
-#                                 args = (tsr, -1, -1, theta_p, gaulert_method))
-#         
-#         return c_p, c_p_abserr
-# =============================================================================
+    def integ_dCp_analytical (self, tsr, theta_p, r_min=.1, r_max=-1, 
+                              gaulert_method = "classic"):
+        if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
+            raise TypeError("Input values must be scalar")
+        
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+        
+        if tsr <=0:
+            raise ValueError("Tip speed ratio must be positive and non-zero")
+    
+        c_p, c_p_abserr = scipy.integrate.quad(self.dC_p, 
+                                r_min, r_max,
+                                args = (tsr, -1, -1, theta_p, gaulert_method))
+        
+        return c_p, c_p_abserr
     
     def dC_p (self, r, tsr, a=-1, a_p=-1, theta_p=0, 
               gaulert_method = "classic"):
@@ -619,95 +630,109 @@ class BEM (Utils_BEM):
                 Infinitesimal power coefficient at position r [1/m]
         """
         
-        #Check inputs
-        # Check if the dimensions of the input values match (must be either 
-        # scalar values or array-like of equal shape)
-        r, tsr, a, a_p, theta_p = self.check_dims (r, tsr, a, a_p, theta_p)
-        
-        if np.any(r<0) or np.any (r>self.R):
-            raise ValueError("Radius r must be within [0,R]")
-        
-        if np.any(tsr<=0):
-            raise ValueError("Tip speed ratio must be positive and non-zero")
-        
-        if np.any(theta_p<-np.pi) or np.any(theta_p>np.pi):
-            raise ValueError("Pitch must be within [-180, 180] degrees")
+# =============================================================================
+#         #Check inputs
+#         # Check if the dimensions of the input values match (must be either 
+#         # scalar values or array-like of equal shape)
+#         r, tsr, a, a_p, theta_p = self.check_dims (r, tsr, a, a_p, theta_p)
+#         
+#         if np.any(r<0) or np.any (r>self.R):
+#             raise ValueError("Radius r must be within [0,R]")
+#         
+#         if np.any(tsr<=0):
+#             raise ValueError("Tip speed ratio must be positive and non-zero")
+#         
+#         if np.any(theta_p<-np.pi) or np.any(theta_p>np.pi):
+#             raise ValueError("Pitch must be within [-180, 180] degrees")
+# =============================================================================
         
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
-            a, a_p, _, _, _ = self.converge_BEM(r=r, 
+            a, a_p, F, _, _ = self.converge_BEM(r=r, 
                                                 tsr=tsr, 
                                                 theta_p=theta_p,
                                                 gaulert_method = gaulert_method)
-
+        
+        #For radii in the last 2% of the rotor radius, the BEM does not return
+        #reliable results. This range is therefore neglected and manually set
+        #to 0
+        i_end = np.where(r>=.98*self.R)
+        r_end = r[i_end]
+        
+        # Radii for which the calculation needs to be performed
+        i_valid = np.where(r<.98*self.R)
+        r = r[i_valid]
+        if a.size>1: a = a[i_valid]
+        if a_p.size>1: a_p = a_p[i_valid]
+        if tsr.size>1: tsr = tsr[i_valid]
+        
+        #Calculate dc_p and append 0 for all points in the last 2 % of the 
+        #rotor radius
         dc_p = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
+        dc_p = np.append (dc_p, np.zeros(r_end.shape))
         
         return dc_p
     
-# =============================================================================
-#     def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
-#         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
-#             raise TypeError("Input values must be scalar")
-#         
-#         if r_min< 0 or r_min>self.R:
-#             raise ValueError("Lower bound must be within [0,R]")
-#         
-#         if r_max == -1:
-#             r_max = self.R
-#         elif r_min>r_max:
-#             raise ValueError("Upper bound must be higher than lower bound")
-#         elif r_max>self.R:
-#             raise ValueError("Upper bound must be within [0,R]")
-#         
-#         if tsr <=0:
-#             raise ValueError("Tip speed ratio must be positive and non-zero")
-#         
-#         M_integ, M_abserr = scipy.integrate.quad(self.calc_local_tang_force, 
-#                                 r_min, r_max,
-#                                 args = (tsr, -1, -1, theta_p))
-#         
-#         return M_integ, M_abserr
-# =============================================================================
+    def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
+        if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
+            raise TypeError("Input values must be scalar")
+        
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+        
+        if tsr <=0:
+            raise ValueError("Tip speed ratio must be positive and non-zero")
+        
+        M_integ, M_abserr = scipy.integrate.quad(self.calc_local_tang_force, 
+                                r_min, r_max,
+                                args = (tsr, -1, -1, theta_p))
+        
+        return M_integ, M_abserr
     
-# =============================================================================
-#     def integ_M_numerical (self, tsr, theta_p, 
-#                            r_min = .1, r_max = -1, dr = .1):
-#         #Prepare inputs
-#         if r_min< 0 or r_min>self.R:
-#             raise ValueError("Lower bound must be within [0,R]")
-#         
-#         if r_max == -1:
-#             r_max = self.R
-#         elif r_min>r_max:
-#             raise ValueError("Upper bound must be higher than lower bound")
-#         elif r_max>self.R:
-#             raise ValueError("Upper bound must be within [0,R]")
-#             
-#         if dr< 0:
-#             raise ValueError("Step width must be positive")
-#         elif dr>r_max-r_min:
-#             raise ValueError("Step width must be smaller than interval of"
-#                              + "r_min and r_max")
-#         
-#         r_range = np.arange(r_min, r_max, dr)
-#         
-#         a_arr = a_p_arr = np.array(np.zeros(len(r_range)))
-#         
-#         for i,r in enumerate(r_range):
-#             a_arr[i], a_p_arr[i], _, _, _ = self.converge_BEM(r, theta_p)
-#         
-#         p_N, p_T = self.calc_local_forces (
-#             r=r_range, 
-#             tsr=tsr,
-#             a=a_arr,
-#             a_p=a_p_arr, 
-#             theta_p=theta_p
-#             )
-#         
-#         M_num = scipy.integrate.trapezoid(p_T, r_range)
-#         
-#         return M_num, p_T, a_arr, a_p_arr
-# =============================================================================
+    def integ_M_numerical (self, tsr, theta_p, 
+                           r_min = .1, r_max = -1, dr = .1):
+        #Prepare inputs
+        if r_min< 0 or r_min>self.R:
+            raise ValueError("Lower bound must be within [0,R]")
+        
+        if r_max == -1:
+            r_max = self.R
+        elif r_min>r_max:
+            raise ValueError("Upper bound must be higher than lower bound")
+        elif r_max>self.R:
+            raise ValueError("Upper bound must be within [0,R]")
+            
+        if dr< 0:
+            raise ValueError("Step width must be positive")
+        elif dr>r_max-r_min:
+            raise ValueError("Step width must be smaller than interval of"
+                             + "r_min and r_max")
+        
+        r_range = np.arange(r_min, r_max, dr)
+        
+        a_arr = a_p_arr = np.array(np.zeros(len(r_range)))
+        
+        for i,r in enumerate(r_range):
+            a_arr[i], a_p_arr[i], _, _, _ = self.converge_BEM(r, theta_p)
+        
+        p_N, p_T = self.calc_local_forces (
+            r=r_range, 
+            tsr=tsr,
+            a=a_arr,
+            a_p=a_p_arr, 
+            theta_p=theta_p
+            )
+        
+        M_num = scipy.integrate.trapezoid(p_T, r_range)
+        
+        return M_num, p_T, a_arr, a_p_arr
     
     def inv_c_p (self, x, r_range, r_range_type="values", 
                       gaulert_method = "classic", 
@@ -805,6 +830,7 @@ class BEM (Utils_BEM):
                        np.empty(ds_bem_shape))
         ds_bem["a_p"] = (list(ds_bem.coords.keys()),
                          np.empty(ds_bem_shape))
+        
         ds_bem["dc_p"] = (list(ds_bem.coords.keys()), 
                          np.empty(ds_bem_shape))
         ds_cp = xr.Dataset(
@@ -819,6 +845,7 @@ class BEM (Utils_BEM):
                                  np.empty(ds_cp_shape))
         ds_cp["cp_num"] = (list(ds_cp.coords.keys()), 
                                 np.empty(ds_cp_shape))
+        
         if multiprocessing:
             #Multiprocessing with executor.map
             with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -850,7 +877,6 @@ class BEM (Utils_BEM):
                                                 np.full(comb_len, "values")))
                 
                 for i in range(comb_len):
-    
                     ds_cp["cp_num"].loc[dict(tsr=tsr_comb[i],
                                            theta_p=theta_p_comb[i])
                                       ] = integrator_num[i][0]
@@ -875,7 +901,7 @@ class BEM (Utils_BEM):
                     #     r_min=r_range[0],  r_max=r_range[-1],
                     #     gaulert_method=gaulert_method)
                     
-                    cp_num, dc_p, a, a_p = self.integ_dCp_numerical (
+                    cp_num, _, a, a_p = self.integ_dCp_numerical (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range, 
                         r_range_type="values", gaulert_method=gaulert_method)
                     
@@ -888,42 +914,40 @@ class BEM (Utils_BEM):
         
         return ds_cp, ds_bem
         
-# =============================================================================
-#     def optimize_C_p (self, tsr_bounds, theta_p_bounds, 
-#                       r_range, r_range_type="bounds",
-#                       gaulert_method = "classic"):
-#         #Prepare inputs
-#         if r_range_type == "bounds":
-#             r_range, r_min, r_max, dr = self.check_radius_range (r_range, 
-#                                                                  self.R)
-#         elif r_range_type == "values":
-#             r_range = np.array(r_range)
-#             if np.any(r_range>self.R) or np.any(r_range<0):
-#                 raise ValueError("All radii in r_range must be within [0,R]")
-#         else:
-#             raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
-#                              " or 'values'")
-#             
-#        
-#         if np.isscalar(tsr_bounds) or not len(tsr_bounds)==2:
-#             raise TypeError("Bounds for tip speed ratio must be an array-like "
-#                             + "object with two elements for the lower and upper"
-#                             + " bound respectively")
-#         if np.isscalar(theta_p_bounds) or not len(theta_p_bounds)==2:
-#             raise TypeError("Bounds for pitch angle must be an array-like "
-#                             + "object with two elements for the lower and upper"
-#                             + " bound respectively")
-#         
-#         
-#         
-#         res = scipy.optimize.minimize(self.inv_c_p, 
-#                                       x0 = (tsr_bounds[0], theta_p_bounds[0]), 
-#                                       args = (r_range, "values",
-#                                               gaulert_method, 
-#                                               "num"),
-#                                       bounds = [tsr_bounds, theta_p_bounds])
-#         return res
-# =============================================================================
+    def optimize_C_p (self, tsr_bounds, theta_p_bounds, 
+                      r_range, r_range_type="bounds",
+                      gaulert_method = "classic"):
+        #Prepare inputs
+        if r_range_type == "bounds":
+            r_range, r_min, r_max, dr = self.check_radius_range (r_range, 
+                                                                 self.R)
+        elif r_range_type == "values":
+            r_range = np.array(r_range)
+            if np.any(r_range>self.R) or np.any(r_range<0):
+                raise ValueError("All radii in r_range must be within [0,R]")
+        else:
+            raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
+                             " or 'values'")
+            
+       
+        if np.isscalar(tsr_bounds) or not len(tsr_bounds)==2:
+            raise TypeError("Bounds for tip speed ratio must be an array-like "
+                            + "object with two elements for the lower and upper"
+                            + " bound respectively")
+        if np.isscalar(theta_p_bounds) or not len(theta_p_bounds)==2:
+            raise TypeError("Bounds for pitch angle must be an array-like "
+                            + "object with two elements for the lower and upper"
+                            + " bound respectively")
+        
+        
+        
+        res = scipy.optimize.minimize(self.inv_c_p, 
+                                      x0 = (tsr_bounds[0], theta_p_bounds[0]), 
+                                      args = (r_range, "values",
+                                              gaulert_method, 
+                                              "num"),
+                                      bounds = [tsr_bounds, theta_p_bounds])
+        return res
        
 #%% Main    
 if __name__ == "__main__":
@@ -979,15 +1003,23 @@ if __name__ == "__main__":
     #                                           r_range=[], 
     #                                           r_range_type="bounds")
     
-    tsr = np.arange(5,10.5,.5)
-    theta_p=np.arange(-3,4.5,.5)
+    tsr_l = 5
+    tsr_u = 10
+    dtsr = .5
+    
+    theta_p_l = -3
+    theta_p_u = 4 
+    dtheta_p = .5
+    
+    tsr = np.arange(tsr_l, tsr_u + dtsr, dtsr)
+    theta_p=np.arange(theta_p_l, theta_p_u + dtheta_p , dtheta_p)
     start = perf_counter()
     ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
                                             theta_p_range=theta_p,
                                             r_range=BEM_calculator.bld_df.r,
                                             r_range_type = "values",
                                             gaulert_method="classic",
-                                            multiprocessing=False)
+                                            multiprocessing=True)
     end = perf_counter()
     print (f"Calculation took {end-start} s")
     
@@ -1002,14 +1034,14 @@ if __name__ == "__main__":
     
     fig = plt.figure(figsize=(10,10))
     ax = plt.axes(projection='3d')
-    ax.set_xlabel('$\lambda$')
-    ax.set_ylabel('$\theta$')
-    ax.set_zlabel('$C_p$')
+    ax.set_xlabel(r'$\lambda$')
+    ax.set_ylabel(r'$\theta_p$')
+    ax.set_zlabel(r'$C_p$')
     X, Y = np.meshgrid(tsr, theta_p)
     Z = ds_cp["cp_num"].values.T
     ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
-                cmap='viridis', edgecolor='none')
-    ax.set_xticks(np.arange(5,10.5))
-    ax.set_yticks(np.arange(-3,4.5))
-    ax.set_title('$C_p$ over $\lambda$ and $\theta$')
+                cmap="plasma", edgecolor='none')
+    ax.set_xticks(np.arange(tsr_l,tsr_u))
+    ax.set_yticks(np.arange(theta_p_l,theta_p_u))
+    ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
     plt.savefig(fname="test.svg")

@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import xarray as xr
+from scipy.interpolate import interp1d
 from pathlib import Path
 
 class Utils_BEM():
@@ -38,7 +39,12 @@ class Utils_BEM():
                 t_airfoils = [24.1, 30.1, 36, 48, 60, 100]
 
         self.t_airfoils = dict(zip(self.airfoil_names, t_airfoils)) 
-    
+        
+        #Create arrays from the datasets for faster access
+        self.aoa_arr = self.airfoil_ds.coords["aoa"].values
+        self.cl_arr = self.airfoil_ds["c_l"].values
+        self.cd_arr = self.airfoil_ds["c_d"].values
+
     @staticmethod
     def check_shape(var):
         """Checks the shape of a variable and converts it to a numpy array, if
@@ -100,56 +106,6 @@ class Utils_BEM():
             raise ValueError ("Dimensions of the input arrays must match")
         
         return var_lst   
-    
-    def load_airfoils_as_df (self, file_lst):
-        """Loads the lift, drag and momentum coefficient (C_l, C_d & C_m)
-        from a list of txt files and returns them as pandas Dataframes.
-        It is assumed, that the first column in the txt file are the angles
-        of attack (aoa) and that these are the same for all files. The 
-        residual columns are assumed to be the lift, drag and momentum 
-        coefficient (in this order)
-        
-        Parameters:
-            file_lst (list):
-                A list containing the relative or absolute file paths of 
-                the text files
-        
-        Returns:
-            cl_df (pandas DataFrame):
-                Dataframe with the C_l values for each airfoil. Each 
-                airfoil is a column with the respective name of the file,
-                the data was extracted from. The indices are the angles of
-                attack
-            cd_df (pandas DataFrame):
-                Dataframe with the C_d values for each airfoil. Each 
-                airfoil is a column with the respective name of the file,
-                the data was extracted from. The indices are the angles of
-                attack
-            cm_df (pandas DataFrame):
-                Dataframe with the C_m values for each airfoil. Each 
-                airfoil is a column with the respective name of the file,
-                the data was extracted from. The indices are the angles of
-                attack
-            aoa_arr (numpy array):
-                The angles of attack
-        """
-        #Initializing tables 
-        aoa_arr,_,_,_ = np.loadtxt(file_lst[0], skiprows=0).T
-        cl_df = pd.DataFrame(dict(aoa=aoa_arr))
-        cd_df = pd.DataFrame(dict(aoa=aoa_arr))
-        cm_df = pd.DataFrame(dict(aoa=aoa_arr))
-        
-        #Readin of tables. Only do this once at startup of simulation
-        for file in file_lst:
-            fname = Path(file).stem
-            cl_df[fname],cd_df[fname],cm_df[fname] = \
-                np.loadtxt(file, skiprows=0, usecols=[1,2,3]).T
-        
-        cl_df.set_index("aoa", inplace = True, drop=True)
-        cd_df.set_index("aoa", inplace = True, drop=True)
-        cm_df.set_index("aoa", inplace = True, drop=True)
-        
-        return aoa_arr, cl_df, cd_df, cm_df
     
     def load_airfoils_as_xr (self, file_lst):
         """Loads the lift, drag and momentum coefficient (C_l, C_d & C_m)
@@ -216,26 +172,21 @@ class Utils_BEM():
             C_d (scalar numerical value or array-like):
                 Drag coefficients 
         """
-        
+
+        #Determine lift and drag coefficients
         aoa = np.array(aoa).reshape(-1)
         tcr = np.array(tcr).reshape(-1)
         
-        #Determine lift and drag coefficients
         cl_aoa=np.zeros([aoa.size,6])
         cd_aoa=np.zeros([aoa.size,6])
         
-        n_airfoils = len(self.airfoil_ds.coords["airfoil"].values)
-        
-        for i in range(n_airfoils):
-            name = self.airfoil_names[i]
+        for i in range(6):
             cl_aoa[:,i]=np.interp (aoa,
-                                   self.airfoil_ds.coords["aoa"].values,
-                                   self.airfoil_ds["c_l"].loc[
-                                       {"airfoil":name}].values)
+                                   self.aoa_arr,
+                                   self.cl_arr[:,i])
             cd_aoa[:,i]=np.interp (aoa,
-                                   self.airfoil_ds.coords["aoa"].values,
-                                   self.airfoil_ds["c_d"].loc[
-                                       {"airfoil":name}].values)
+                                   self.aoa_arr,
+                                   self.cd_arr[:,i])
         
         C_l = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cl_aoa[i,:]) 
                         for i in range(tcr.size)])
