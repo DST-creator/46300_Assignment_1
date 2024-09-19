@@ -89,9 +89,8 @@ class BEM (Utils_BEM):
         if np.any(a>=1) or np.any(a<0):
             raise ValueError("Axial induction factor must be lie within [0,1[")
         
-        if np.any(a_p<0):
-            raise ValueError("Tangential induction factor must be lie within "
-                             + "[0,inf[")
+        if np.any(a_p==-1):
+            raise ValueError("Tangential induction factor must not be -1")
         
         if not np.any(tsr<=0):
             phi =  np.arctan((np.divide(1-a, 
@@ -302,23 +301,24 @@ class BEM (Utils_BEM):
             
             a[a<0] = 0
             a[a>=1] = .99999
-            a_p[a_p<0] = 0
+            a_p[a_p==-1] = -.9999999
         else:
             if a<0: 
                 a=np.array([0])
-                # print(f"Warning: a<0for r = {r}")
+                print(f"Warning: a<0for r = {r}")
             elif a>=1: 
                 a =np.array([.99])
-                # print(f"Warning: a>1 for r = {r}")
+                print(f"Warning: a>1 for r = {r}")
             
-            if a_p<0:
-                a_p = np.array([0])
-                # print(f"Warning: a_p<0 for r = {r}")
+            if a_p==-1:
+                a_p = np.array([-.9999999])
+                print(f"Warning: a_p<0 for r = {r}")
         
         return a, a_p, F, dC_T
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
-                     a_0 = 0.3, a_p_0 = 0.0, dC_T_0 = 0,
+                     a_0 = 0.3, a_p_0 = 0.004, dC_T_0 = 0,
+                     c=-1, tcr=-1, beta=-np.inf, sigma=-1,
                      epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
@@ -364,10 +364,14 @@ class BEM (Utils_BEM):
                 Number of iteration
             
         """
-        c = np.interp(r, self.bld_df.r, self.bld_df.c)
-        tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
-        beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
-        sigma = np.divide(c*self.B, 2*np.pi*r)
+        if c == -1:
+            c = np.interp(r, self.bld_df.r, self.bld_df.c)
+        if tcr == -1:
+            tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
+        if beta == -np.inf:
+            beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
+        if sigma == -1:
+            sigma = np.divide(c*self.B, 2*np.pi*r)
         
         a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0,
@@ -536,7 +540,8 @@ class BEM (Utils_BEM):
         
         return p_T
     
-    def integ_dCp_numerical (self, tsr, theta_p, r_range, 
+    def integ_dCp_numerical (self, tsr, theta_p, r_range,
+                             c=-1, tcr=-1, beta=-np.inf, sigma=-1,
                              r_range_type = "values", 
                              gaulert_method = "classic"):
         #Prepare inputs
@@ -550,6 +555,29 @@ class BEM (Utils_BEM):
             raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
                              " or 'values'")
         
+        r_len=len(r_range)
+        if not np.isscalar(c) and not len(c)==r_len:
+            raise ValueError("Inputs must have the same size")
+        elif np.isscalar(c) and c==-1:
+            [np.interp(r, self.bld_df.r, self.bld_df.tcr) for r in r_range]
+        
+        if not np.isscalar(tcr) and not len(tcr)==r_len:
+            raise ValueError("Inputs must have the same size")
+        elif np.isscalar(tcr) and tcr==-1:
+            tcr = [np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+                   for r in r_range]
+        
+        if not np.isscalar(beta) and not len(beta)==r_len:
+            raise ValueError("Inputs must have the same size")
+        elif np.isscalar(beta) and beta == -np.inf:
+            beta = np.deg2rad([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+                               for r in r_range])
+        
+        if not np.isscalar(sigma) and not len(sigma)==r_len:
+            raise ValueError("Inputs must have the same size")
+        elif np.isscalar(sigma) and sigma == -1:
+            sigma = [np.divide(c*self.B, 2*np.pi*r) for r in r_range]
+        
         
         a_arr = np.array(np.zeros(len(r_range)))
         a_p_arr = np.array(np.zeros(len(r_range)))
@@ -558,6 +586,9 @@ class BEM (Utils_BEM):
             a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
                                                     theta_p=theta_p,
+                                                    c=c[i], tcr=tcr[i], 
+                                                    beta=beta[i], 
+                                                    sigma=sigma[i],
                                                     gaulert_method =
                                                     gaulert_method)
             a_arr[i] = a_i.item()
@@ -708,8 +739,7 @@ class BEM (Utils_BEM):
         dc_T = np.append (dc_T, np.zeros(r_end.shape))
         
         return dc_T
-        
-    
+          
     def integ_dcT (self, r, a, F):
         """Integrates the function for dC_T over r for given values of the 
         radius, the axial induction factor a and the Prandtl correction 
@@ -732,8 +762,7 @@ class BEM (Utils_BEM):
                                         r)
         
         return c_T
-        
-    
+         
     def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
             raise TypeError("Input values must be scalar")
@@ -837,11 +866,13 @@ class BEM (Utils_BEM):
         else:
             return inv_c_p
     
-    def integ_dCp_numerical_madsen (self, tsr, theta_p, r_range, 
-                             r_range_type = "values"):
+    def integ_dCp_numerical_madsen (self, tsr, theta_p, r_range,
+                                    c=-1, tcr=-1, beta=-np.inf, sigma=-1,
+                                    r_range_type = "values"):
         return self.integ_dCp_numerical (tsr=tsr, theta_p=theta_p, 
                                          r_range=r_range, 
-                                         r_range_type = r_range_type, 
+                                         r_range_type = r_range_type,
+                                         c=c, tcr=tcr, beta=beta, sigma=sigma,
                                          gaulert_method = "Madsen")
     
     def calc_cp (self, tsr_range, theta_p_range, 
@@ -909,6 +940,14 @@ class BEM (Utils_BEM):
         ds_cp["cT_num"] = (list(ds_cp.coords.keys()), 
                                 np.empty(ds_cp_shape))
         
+        c = np.array([np.interp(r, self.bld_df.r, self.bld_df.c) 
+                      for r in r_range])
+        tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+                        for r in r_range])
+        beta = np.deg2rad(np.array([np.interp(r, self.bld_df.r, self.bld_df.beta) 
+                         for r in r_range]))
+        sigma = np.divide(c*self.B, 2*np.pi*r_range)
+        
         if multiprocessing:
             #Multiprocessing with executor.map
             with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -931,12 +970,20 @@ class BEM (Utils_BEM):
                                                 tsr_comb,
                                                 np.deg2rad(theta_p_comb),
                                                 [r_range] * comb_len,
+                                                [c] * comb_len,
+                                                [tcr] * comb_len,
+                                                [beta] * comb_len,
+                                                [sigma] * comb_len,
                                                 np.full(comb_len, "values")))
                 else:
                     integrator_num = list(executor.map(self.integ_dCp_numerical_madsen,
                                                 tsr_comb,
                                                 np.deg2rad(theta_p_comb),
                                                 [r_range] * comb_len,
+                                                [c] * comb_len,
+                                                [tcr] * comb_len,
+                                                [beta] * comb_len,
+                                                [sigma] * comb_len,
                                                 np.full(comb_len, "values")))
                 
                 for i in range(comb_len):
@@ -972,7 +1019,8 @@ class BEM (Utils_BEM):
                     #     gaulert_method=gaulert_method)
                     
                     cp_num, cT_num, a, a_p, F = self.integ_dCp_numerical (
-                        tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range, 
+                        tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
+                        c=c, tcr=tcr, beta=beta, sigma=sigma,
                         r_range_type="values", gaulert_method=gaulert_method)
                     
                     #Save results to dataframe
@@ -1076,11 +1124,11 @@ if __name__ == "__main__":
     #Calculate C_p values
     tsr_l = 5
     tsr_u = 10
-    dtsr = .5
+    dtsr = .1
     
     theta_p_l = -3
     theta_p_u = 4 
-    dtheta_p = .5
+    dtheta_p = .1
     
     r_range = BEM_calculator.bld_df.r
     tsr = np.arange(tsr_l, tsr_u + dtsr, dtsr)
@@ -1118,7 +1166,7 @@ if __name__ == "__main__":
     ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
     ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
     # ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
-    plt.savefig(fname="C_P_max_surface_plot.svg")
+    plt.savefig(fname="./_03_exports/C_P_max_surface_plot.svg")
     
     
     #Plot C_T
@@ -1134,7 +1182,7 @@ if __name__ == "__main__":
     ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
     ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
     # ax.set_title(r'$C_T$ over $\lambda$ and $\theta_p$')
-    plt.savefig(fname="C_T_surface_plot.svg")
+    plt.savefig(fname="./_03_exports/C_T_surface_plot.svg")
 
 
 #%% Task 2
@@ -1161,7 +1209,7 @@ if __name__ == "__main__":
     ax.set_ylabel('$P\:[MW]$')
     ax.grid()
     
-    plt.savefig(fname="Power_curve.svg",
+    plt.savefig(fname="./_03_exports/Power_curve.svg",
                 bbox_inches = "tight")
     
     
@@ -1174,7 +1222,7 @@ if __name__ == "__main__":
     ax.set_ylabel('$\omega\:[{rad}/s]$')
     ax.grid()
     
-    plt.savefig(fname="omega_over_V0.svg",
+    plt.savefig(fname="./_03_exports/omega_over_V0.svg",
                 bbox_inches = "tight")
 
 #%% Task 3
