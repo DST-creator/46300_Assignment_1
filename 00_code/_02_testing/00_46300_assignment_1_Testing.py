@@ -16,7 +16,12 @@ from mpl_toolkits.mplot3d import Axes3D
 from time import perf_counter
 
 #Custom modules
+import sys
+sys.path.append(r"C:\Users\davis\00_data\00_Documents\01_Master_studies"
+                r"\46300 - WTT and Aerodynamics\01_Assigments\00_Assignment_1"
+                r"\00_code\_01_utils")
 from utils_46300_assignment_1 import Utils_BEM
+
 
 #%%Global plot settings
 mpl.rcParams['lines.linewidth'] = 1.2
@@ -27,7 +32,7 @@ mpl.rcParams['ytick.labelsize'] = 18
 mpl.rcParams['axes.labelsize'] = 20
 mpl.rcParams['axes.titlesize'] = 25
 mpl.rcParams['legend.fontsize'] = 20
-mpl.rcParams['figure.subplot.top'] = .94    #Distance between suptitle and subplots
+mpl.rcParams['figure.subplot.top'] = .93    #Distance between suptitle and subplots
 mpl.rcParams['xtick.major.pad'] = 5         
 mpl.rcParams['ytick.major.pad'] = 5
 # mpl.rcParams['ztick.major.pad'] = 5
@@ -49,6 +54,7 @@ class BEM (Utils_BEM):
         self.P_rated = P_rated  #[W] - Rated power
         self.rho = rho          #[kg/m^3] - Air density
         self.B = B              #[-] - Number of blades
+    
         
     def arctan_phi (self, a, a_p, r, tsr=-1, V_0=-1, omega = 1):
         """Calculate the angle between the plane of rotation and the relative 
@@ -221,6 +227,10 @@ class BEM (Utils_BEM):
             beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
         
         #Calculate the angle of attack
+        # V_0=10
+        # omega = tsr*V_0/r
+        # phi =  np.arctan(np.divide((1-a_0)*V_0, 
+        #                            (1+a_p_0)*omega*r).astype(float))
         phi = self.arctan_phi (a=a_0, a_p=a_p_0, r=r, tsr=tsr)
         theta = theta_p + beta
         
@@ -295,27 +305,27 @@ class BEM (Utils_BEM):
                 a_p = np.append (a_p, np.zeros(r_end.shape))
                 F = np.append (F, np.zeros(r_end.shape))
         
-        #Check results for invalid values
-        if not np.isscalar(r):
-            if any([np.any(a<0 * a>=1), np.any(a_p<0)]):
-                print(f"Warning: Invalid a or a_p for r = {r}")
+        # #Check results for invalid values
+        # if not np.isscalar(r):
+        #     if any([np.any(a<0 * a>=1), np.any(a_p<0)]):
+        #         print(f"Warning: Invalid a or a_p for r = {r}")
             
-            a[a<0] = 0
-            a[a>=1] = .99999
-            a_p[a_p<0] = 0
-        else:
-            if a<0: 
-                a=np.array([0])
-                # print(f"Warning: a<0for r = {r}")
-            elif a>=1: 
-                a =np.array([.99])
-                # print(f"Warning: a>1 for r = {r}")
+        #     a[a<0] = 0
+        #     a[a>=1] = .99999
+        #     a_p[a_p<0] = 0
+        # else:
+        #     if a<0: 
+        #         a=np.array([0])
+        #         # print(f"Warning: a<0for r = {r}")
+        #     elif a>=1: 
+        #         a =np.array([.99])
+        #         # print(f"Warning: a>1 for r = {r}")
             
-            if a_p<0:
-                a_p = np.array([0])
-                # print(f"Warning: a_p<0 for r = {r}")
+        #     if a_p<0:
+        #         a_p = np.array([0])
+        #         # print(f"Warning: a_p<0 for r = {r}")
         
-        return a, a_p, F, dC_T
+        return a, a_p, F, dC_T, np.rad2deg(phi), np.rad2deg(aoa), C_l, C_d, C_n, C_t
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
                      a_0 = 0.3, a_p_0 = 0.0, dC_T_0 = 0,
@@ -708,8 +718,7 @@ class BEM (Utils_BEM):
         dc_T = np.append (dc_T, np.zeros(r_end.shape))
         
         return dc_T
-        
-    
+         
     def integ_dcT (self, r, a, F):
         """Integrates the function for dC_T over r for given values of the 
         radius, the axial induction factor a and the Prandtl correction 
@@ -732,8 +741,7 @@ class BEM (Utils_BEM):
                                         r)
         
         return c_T
-        
-    
+          
     def integ_M_analytical (self, tsr, theta_p, r_min=.1, r_max=-1):
         if not all([np.isscalar(var) for var in [tsr, theta_p, r_min, r_max]]):
             raise TypeError("Input values must be scalar")
@@ -1043,36 +1051,6 @@ if __name__ == "__main__":
                            rho = rho)
     
 
-    #Test for BEM Exercise
-    # a, a_p, F, conv_res, n = BEM_calculator.converge_BEM(r=24.5, 
-    #                                         tsr=tsr, 
-    #                                         theta_p = np.deg2rad(-3), 
-    #                                         a_0 = 0, 
-    #                                         a_p_0 = 0, 
-    #                                         epsilon=1e-6, 
-    #                                         f = .1, 
-    #                                         gaulert_method = "Madsen")
-    
-    
-    # r = 24.5
-    # a, a_p, F, res, n = BEM_calculator.converge_BEM(r=r, theta_p=-3,  f = .1, 
-    #                                                 gaulert_method = "classic")
-    # p_N, p_T = BEM_calculator.calc_local_forces (r=r, theta_p=-3, tsr = tsr, 
-    #                                              a=a, a_p=a_p)
-    
-
-    # #Plot power coefficent curve
-    # fig, ax = plt.subplots(figsize=(16, 10))
-    # ax.plot(ds_cp.coords["tsr"].values, 
-    #         ds_cp["cp_num"].sel(theta_p=theta_p[0]).values) 
-    # ax.grid()
-    # plt.savefig(fname="integ.svg",
-    #             bbox_inches = "tight")
-    
-    
-    
-    #%% Task 1
-    
     #Calculate C_p values
     tsr_l = 5
     tsr_u = 10
@@ -1083,109 +1061,177 @@ if __name__ == "__main__":
     dtheta_p = .5
     
     r_range = BEM_calculator.bld_df.r
-    tsr = np.arange(tsr_l, tsr_u + dtsr, dtsr)
-    theta_p=np.arange(theta_p_l, theta_p_u + dtheta_p , dtheta_p)
+    tsr_range = np.arange(tsr_l, tsr_u + dtsr, dtsr)
+    theta_p_range =np.arange(theta_p_l, theta_p_u + dtheta_p , dtheta_p)
     
-    start = perf_counter()
-    ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
-                                            theta_p_range=theta_p,
-                                            r_range=r_range,
-                                            r_range_type = "values",
-                                            gaulert_method="classic",
-                                            multiprocessing=True)
-    end = perf_counter()
-    print (f"Calculation took {end-start} s")
+    #Prepare dataset for the values
+    ds_bem = xr.Dataset(
+        {},
+        coords={"r":r_range, 
+                "tsr":tsr_range,
+                "theta_p":theta_p_range}
+        )
     
-    #Maximum C_P and corresponding coordinates
-    c_P_arr= ds_cp["cp_num"]
-    c_P_max = c_P_arr.max().item()
-    # Find the coordinates where the maximum value occurs
-    max_coords = c_P_arr.where(c_P_arr==c_P_arr.max(), drop=True).coords
-    # Convert the coordinates to a dictionary for easy access
-    coord_dict = {dim: round(coord.values.item(),3) for dim, coord in max_coords.items()}
-    tsr_max, theta_p_max = coord_dict.values()
+    ds_bem_shape = [len(r_range), len(tsr_range), len(theta_p_range)]
     
-    #Plot C_p
-    fig = plt.figure(figsize=(10,10))
-    ax = plt.axes(projection='3d')
-    ax.set_xlabel(r'$\lambda$')
-    ax.set_ylabel(r'$\theta_p$')
-    ax.set_zlabel(r'$C_p$')
-    X, Y = np.meshgrid(tsr, theta_p)
-    Z = ds_cp["cp_num"].values.T
-    ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
-                cmap="plasma", edgecolor='none')
-    ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
-    ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
-    # ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
-    plt.savefig(fname="C_P_max_surface_plot.svg")
+    ds_bem["a"] = (list(ds_bem.coords.keys()),
+                   np.empty(ds_bem_shape))
+    ds_bem["a_p"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["F"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["dC_T"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["phi"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["aoa"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["C_l"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["C_d"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["C_n"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+    ds_bem["C_t"] = (list(ds_bem.coords.keys()),
+                     np.empty(ds_bem_shape))
+
+    def plot_3d(ds, var, r, tsr_lims, theta_p_lims, elev=30, azim=45):
+        #Plot C_p
+        fig = plt.figure(figsize=(8,8))
+        ax = plt.axes(projection='3d')
+        ax.set_xlabel(r'$\lambda$')
+        ax.set_ylabel(r'$\theta_p$')
+        ax.set_zlabel(var)
+        X, Y = np.meshgrid(np.arange(tsr_lims[0], 
+                                tsr_lims[1] + tsr_lims[2], 
+                                tsr_lims[2]), 
+                           np.arange(theta_p_lims[0], 
+                                     theta_p_lims[1] + theta_p_lims[2],
+                                     theta_p_lims[2]))
+        Z = ds_bem[var].sel(r=r).values.T
+        ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+                    cmap="plasma", edgecolor='none')
+        ax.set_xticks(np.arange(tsr_lims[0], 
+                                tsr_lims[1] + tsr_lims[2], 
+                                1))
+        ax.set_yticks(np.arange(theta_p_lims[0], 
+                                theta_p_lims[1] + theta_p_lims[2], 
+                                1))
+        ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
+        ax.set_title(var + r' over $\lambda$ and $\theta_p$')
+        
+        ax.view_init(elev, azim)
+        
+        plt.savefig(fname=f"{var}.svg")
+
+    def plot_2d(ds, var, r, x_name, z_name, x_range, z_range):
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.set_xlabel(x_name)
+        ax.set_ylabel(var)
+        
+        for z in z_range:
+            ax.plot(x_range, ds_bem[var].loc[{"r":r, z_name:z}].values)
+     
+        ax.set_title(var + " over " + x_name)
+        
+        plt.savefig(fname=f"2d_{var}.svg")
+    
+    for tsr in tsr_range:
+        for theta_p in theta_p_range:
+            r = r_range[0]
+            
+            c = np.interp(r, BEM_calculator.bld_df.r, BEM_calculator.bld_df.c)
+            tcr = np.interp(r, BEM_calculator.bld_df.r, BEM_calculator.bld_df.tcr)
+            beta = np.deg2rad(np.interp(r, BEM_calculator.bld_df.r, BEM_calculator.bld_df.beta))
+            sigma = np.divide(c*B, 2*np.pi*r)
+            
+            a, a_p, F, dC_T, phi, aoa, C_l, C_d, C_n, C_t = \
+                BEM_calculator.calc_ind_factors(r=r, tsr=tsr, 
+                                                theta_p = np.deg2rad(theta_p), 
+                                     a_0 = 0, a_p_0 = 0, dC_T_0 = 0, 
+                                     c=c, tcr=tcr, beta=beta, sigma=sigma,
+                                     f=.1, gaulert_method = "classic")
+            
+            ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = a[0]
+            ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = a_p[0]
+            ds_bem["F"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = F
+            ds_bem["dC_T"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = dC_T[0]
+            ds_bem["phi"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = phi
+            ds_bem["aoa"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = aoa
+            ds_bem["C_l"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = C_l[0]
+            ds_bem["C_d"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = C_d[0]
+            ds_bem["C_n"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = C_n[0]
+            ds_bem["C_t"].loc[dict(tsr=tsr,theta_p=theta_p, r=r)] = C_t[0]
+    
+    print ("Calculation done\nStarting plotting")
+    
+    for var in list(ds_bem.keys()):
+        print (f"Plotting {var}")
+        
+        elev = 45
+        
+        match var:
+            case "a":
+                azim = 45
+            # case "a_p":
+            #     azim = 0
+            case "C_d":
+                azim = 0
+            # case "C_l":
+            #     azim = 0
+            # case "C_n":
+            #     azim = 0
+            # case "C_t":
+            #     azim = 0
+            # case "dC_T":
+            #     azim = 0
+            # case "aoa":
+            #     azim = 120
+            case _:
+                azim = 45
+        
+        lims = dict (tsr = [tsr_l, tsr_u, dtsr],
+                     theta_p = [theta_p_l, theta_p_u, dtheta_p])
+        
+        plot_3d(ds_bem, var, r, 
+                [tsr_l, tsr_u, dtsr], 
+                [theta_p_l, theta_p_u, dtheta_p],
+                elev, azim)
+        
+        if var in ["a", "a_p", "C_n", "C_t"]:
+            plot_2d(ds_bem, var, r, 
+                    x_name="tsr", 
+                    z_name="theta_p", 
+                    x_range = tsr_range,
+                    z_range = theta_p_range )
+        elif var in ["aoa", "C_l", "C_d", "phi"]:
+            plot_2d(ds_bem, var, r, 
+                    x_name="theta_p", 
+                    z_name="tsr", 
+                    x_range = theta_p_range,
+                    z_range = tsr_range)
     
     
-    #Plot C_T
-    fig = plt.figure(figsize=(10,10))
-    ax = plt.axes(projection='3d')
-    ax.set_xlabel(r'$\lambda$')
-    ax.set_ylabel(r'$\theta_p$')
-    ax.set_zlabel(r'$C_T$')
-    X, Y = np.meshgrid(tsr, theta_p)
-    Z = ds_cp["cT_num"].values.T
-    ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
-                cmap="plasma", edgecolor='none')
-    ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
-    ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
-    # ax.set_title(r'$C_T$ over $\lambda$ and $\theta_p$')
-    plt.savefig(fname="C_T_surface_plot.svg")
-
-
-#%% Task 2
-    
-    #Calculate rated wind speed
-    V_0 = np.arange(v_in, 12, .25)
-    P = c_P_max*.5*rho*np.pi*R**2*V_0**3
-    omega = tsr_max*V_0/R
-    V_rated = intersection(V_0, P, [v_in, v_out], [P_rated, P_rated])[0][0]
-    omega_max = tsr_max*V_rated/R
-    rpm_max = omega_max * 60 / (2*np.pi)
-    
-    # Plot Power over wind speed
-    fig, ax = plt.subplots(figsize=(16, 10))
-    ax.plot(V_0, P/1e6, label = "Power curve")
-    ax.axvline(V_rated, ls="--", lw=1.5, color="k")
-    # ax.text(0.2, P_rated/1e6*1.03, '$P_{rated}$', color='k', va='center', ha='center',
-    #     transform=ax.get_yaxis_transform())
-    ax.axhline(P_rated/1e6, ls="--", lw=1.5, color="k")
-    # ax.text(V_rated*.98, .2, '$V_{rated}$', color='k', va='center', ha='center',
-    #     transform=ax.get_xaxis_transform(), rotation="vertical")
-    # ax.set_title('Power curve')
-    ax.set_xlabel('$V_0\:[m/s]$')
-    ax.set_ylabel('$P\:[MW]$')
-    ax.grid()
-    
-    plt.savefig(fname="Power_curve.svg",
-                bbox_inches = "tight")
-    
-    
-    # Plot omega over wind speed
-    fig, ax = plt.subplots(figsize=(16, 10))
-    ax.plot(V_0, omega, label = "Power curve")
-    ax.axvline(V_rated, ls="--", lw=1.5, color="k")
-    # ax.set_title('$\omega$ over the wind speed')
-    ax.set_xlabel('$V_0\:[m/s]$')
-    ax.set_ylabel('$\omega\:[{rad}/s]$')
-    ax.grid()
-    
-    plt.savefig(fname="omega_over_V0.svg",
-                bbox_inches = "tight")
-
-#%% Task 3
-
-
-
-
-
-
-
-
-
-
-
+# =============================================================================
+#     R = 31
+#     B = 3 
+#     P_rated = 10.64*1e6
+#     v_in = 4
+#     v_out = 25
+#     rho = 1.225
+#     
+# # ####################################
+# #     R=31
+# #     tsr = 2.61*R/8
+# # ####################################
+#     
+#     BEM_calculator =  BEM (R = R,
+#                            B = B,
+#                            P_rated = P_rated,
+#                            v_in = v_in,
+#                            v_out = v_out,
+#                            rho = rho)
+#     
+#     a, a_p, F, conv_res, n = BEM_calculator.converge_BEM(r=24.5, tsr, theta_p = np.pi):
+#     
+# =============================================================================

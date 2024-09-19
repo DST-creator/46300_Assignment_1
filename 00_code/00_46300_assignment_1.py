@@ -319,7 +319,7 @@ class BEM (Utils_BEM):
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
                      a_0 = 0.3, a_p_0 = 0.0, dC_T_0 = 0,
-                     epsilon=1e-4, f = .1, gaulert_method = "classic"):
+                     epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
         Note: If the values do not converge within 1000 iterations, the 
@@ -375,7 +375,7 @@ class BEM (Utils_BEM):
                                           gaulert_method=gaulert_method)
         n = 1
         
-        while (abs(a-a_0)>epsilon*a) or (abs(a_p-a_p_0)>epsilon*a_p): 
+        while (abs(a-a_0)>epsilon) or (abs(a_p-a_p_0)>epsilon): 
             if n>=1000:
                 print(f"Maximum iteration number reached before convergence")
                 break
