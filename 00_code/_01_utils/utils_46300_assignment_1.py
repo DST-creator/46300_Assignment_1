@@ -9,12 +9,17 @@ class Utils_BEM():
     def __init__(self, airfoil_files=[], bld_file="", t_airfoils = []):
         #Load the turbine data (incl. checking the inputs for the files)
         # Load the airfoil data (Lift, Drag and Momentum coefficient)
-        std_airfoil_files = ['./00_rsc/FFA-W3-2411.txt',
-                             './00_rsc/FFA-W3-301.txt',
-                             './00_rsc/FFA-W3-360.txt',
-                             './00_rsc/FFA-W3-480.txt',
-                             './00_rsc/FFA-W3-600.txt',
-                             './00_rsc/cylinder.txt']
+        
+        source_folder = r"C:\Users\davis\00_data\00_Documents\01_Master_studies"\
+                        + r"\46300 - WTT and Aerodynamics\01_Assigments"\
+                        + r"\00_Assignment_1\00_code\_00_rsc"
+        std_airfoil_files = [r'FFA-W3-2411.txt',
+                             r'FFA-W3-301.txt',
+                             r'FFA-W3-360.txt',
+                             r'FFA-W3-480.txt',
+                             r'FFA-W3-600.txt',
+                             r'cylinder.txt']
+        std_airfoil_files = [source_folder + "\\" + s for s in std_airfoil_files]
         
         airfoil_files =  airfoil_files if airfoil_files else std_airfoil_files
         for file in airfoil_files:
@@ -24,7 +29,7 @@ class Utils_BEM():
             self.load_airfoils_as_xr (airfoil_files)
         
         # Load the blade design data
-        bld_file =  bld_file if bld_file else "./00_rsc/bladedat.txt"
+        bld_file =  bld_file if bld_file else source_folder + "\\" + "bladedat.txt"
         if not os.path.isfile(Path(bld_file)): 
             raise OSError(f"Blade data file {bld_file} not found")
         self.bld_df = pd.DataFrame(columns = ["r", "beta", "c", "tcr"],

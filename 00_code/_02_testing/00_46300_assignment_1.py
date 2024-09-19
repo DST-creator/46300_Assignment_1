@@ -16,7 +16,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from time import perf_counter
 
 #Custom modules
-from _01_utils.utils_46300_assignment_1 import Utils_BEM
+from utils_46300_assignment_1 import Utils_BEM
 
 #%%Global plot settings
 mpl.rcParams['lines.linewidth'] = 1.2
