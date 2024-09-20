@@ -4,6 +4,7 @@ import scipy
 import numpy as np
 import xarray as xr
 import concurrent.futures
+import math
 from intersect import intersection
 
 #Plotting imports
@@ -196,15 +197,15 @@ class BEM (Utils_BEM):
         # radius. If so, split the values and return a=a_p=-1 for them
         # later on. This region is known to be mathematically unstable
         if np.isscalar(r):
-            if r>=.98*self.R:
+            if r>=.995*self.R:
                 return np.zeros(4)
         else:
             # Radii for which p_T and p_N should be zero
-            i_end = np.where(r>=.98*self.R)
+            i_end = np.where(r>=.995*self.R)
             r_end = r[i_end]
             
             # Radii for which the calculation needs to be performed
-            i_valid = np.where(r<.98*self.R)
+            i_valid = np.where(r<.995*self.R)
             r = r[i_valid]
             if a_0.size>1: a_0 = a_0[i_valid]
             if a_p_0.size>1: a_p_0 = a_p_0[i_valid]
@@ -227,9 +228,8 @@ class BEM (Utils_BEM):
         C_l, C_d = self.interp_coeffs (aoa=np.rad2deg(aoa), tcr=tcr)
         
 # ######################################
-#         c = 1.5
-#         C_l = .5
-#         C_d = .01
+        # C_l = .5
+        # C_d = .01
 # ######################################
         
         #calculate normal and tangential force factors
@@ -311,8 +311,13 @@ class BEM (Utils_BEM):
                 print(f"Warning: a>1 for r = {r}")
             
             if a_p==-1:
+<<<<<<< HEAD
                 a_p = np.array([-.9999999])
                 print(f"Warning: a_p<0 for r = {r}")
+=======
+                a_p = np.array([0])
+                print(f"Warning: a_p=-1 for r = {r}")
+>>>>>>> 8e0cf4f5c008f77bbda337a67491ea93c8f60d64
         
         return a, a_p, F, dC_T
     
@@ -372,6 +377,15 @@ class BEM (Utils_BEM):
             beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
         if sigma == -1:
             sigma = np.divide(c*self.B, 2*np.pi*r)
+        
+########################################################################################
+        # tcr = 100    
+        # c=1.5
+        # beta = np.deg2rad(2)
+        # sigma = np.divide(c*self.B, 2*np.pi*r)
+########################################################################################
+        
+        
         
         a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0,
@@ -685,11 +699,11 @@ class BEM (Utils_BEM):
         #For radii in the last 2% of the rotor radius, the BEM does not return
         #reliable results. This range is therefore neglected and manually set
         #to 0
-        i_end = np.where(r>=.98*self.R)
+        i_end = np.where(r>=.995*self.R)
         r_end = r[i_end]
         
         # Radii for which the calculation needs to be performed
-        i_valid = np.where(r<.98*self.R)
+        i_valid = np.where(r<.995*self.R)
         r = r[i_valid]
         if a.size>1: a = a[i_valid]
         if a_p.size>1: a_p = a_p[i_valid]
@@ -724,11 +738,11 @@ class BEM (Utils_BEM):
         #For radii in the last 2% of the rotor radius, the BEM does not return
         #reliable results. This range is therefore neglected and manually set
         #to 0
-        i_end = np.where(r>=.98*self.R)
+        i_end = np.where(r>=.995*self.R)
         r_end = r[i_end]
         
         # Radii for which the calculation needs to be performed
-        i_valid = np.where(r<.98*self.R)
+        i_valid = np.where(r<.995*self.R)
         r = r[i_valid]
         if a.size>1: a = a[i_valid]
         if F.size>1: F = F[i_valid]
@@ -1079,8 +1093,8 @@ if __name__ == "__main__":
     rho = 1.225
     
 # ####################################
-#     R=31
-#     tsr = 2.61*R/8
+    # R=31
+    # tsr = 2.61*R/8
 # ####################################
     
     BEM_calculator =  BEM (R = R,
@@ -1091,7 +1105,7 @@ if __name__ == "__main__":
                            rho = rho)
     
 
-    #Test for BEM Exercise
+    # #Test for BEM Exercise
     # a, a_p, F, conv_res, n = BEM_calculator.converge_BEM(r=24.5, 
     #                                         tsr=tsr, 
     #                                         theta_p = np.deg2rad(-3), 
@@ -1100,23 +1114,6 @@ if __name__ == "__main__":
     #                                         epsilon=1e-6, 
     #                                         f = .1, 
     #                                         gaulert_method = "Madsen")
-    
-    
-    # r = 24.5
-    # a, a_p, F, res, n = BEM_calculator.converge_BEM(r=r, theta_p=-3,  f = .1, 
-    #                                                 gaulert_method = "classic")
-    # p_N, p_T = BEM_calculator.calc_local_forces (r=r, theta_p=-3, tsr = tsr, 
-    #                                              a=a, a_p=a_p)
-    
-
-    # #Plot power coefficent curve
-    # fig, ax = plt.subplots(figsize=(16, 10))
-    # ax.plot(ds_cp.coords["tsr"].values, 
-    #         ds_cp["cp_num"].sel(theta_p=theta_p[0]).values) 
-    # ax.grid()
-    # plt.savefig(fname="integ.svg",
-    #             bbox_inches = "tight")
-    
     
     
     #%% Task 1
@@ -1166,7 +1163,11 @@ if __name__ == "__main__":
     ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
     ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
     # ax.set_title(r'$C_p$ over $\lambda$ and $\theta_p$')
+<<<<<<< HEAD
     plt.savefig(fname="./_03_exports/C_P_max_surface_plot.svg")
+=======
+    plt.savefig(fname="./_03_export/C_P_max_surface_plot.svg")
+>>>>>>> 8e0cf4f5c008f77bbda337a67491ea93c8f60d64
     
     
     #Plot C_T
@@ -1182,7 +1183,11 @@ if __name__ == "__main__":
     ax.set_xticks(np.arange(tsr_l, tsr_u + dtsr, 1))
     ax.set_yticks(np.arange(theta_p_l, theta_p_u + dtheta_p , 1))
     # ax.set_title(r'$C_T$ over $\lambda$ and $\theta_p$')
+<<<<<<< HEAD
     plt.savefig(fname="./_03_exports/C_T_surface_plot.svg")
+=======
+    plt.savefig(fname="./_03_export/C_T_surface_plot.svg")
+>>>>>>> 8e0cf4f5c008f77bbda337a67491ea93c8f60d64
 
 
 #%% Task 2
@@ -1209,7 +1214,11 @@ if __name__ == "__main__":
     ax.set_ylabel('$P\:[MW]$')
     ax.grid()
     
+<<<<<<< HEAD
     plt.savefig(fname="./_03_exports/Power_curve.svg",
+=======
+    plt.savefig(fname="./_03_export/Power_curve.svg",
+>>>>>>> 8e0cf4f5c008f77bbda337a67491ea93c8f60d64
                 bbox_inches = "tight")
     
     
@@ -1222,11 +1231,37 @@ if __name__ == "__main__":
     ax.set_ylabel('$\omega\:[{rad}/s]$')
     ax.grid()
     
+<<<<<<< HEAD
     plt.savefig(fname="./_03_exports/omega_over_V0.svg",
+=======
+    plt.savefig(fname="./_03_export/omega_over_V0.svg",
+>>>>>>> 8e0cf4f5c008f77bbda337a67491ea93c8f60d64
                 bbox_inches = "tight")
 
 #%% Task 3
 
+#Calculate C_p values
+V_0_l = math.ceil(V_rated * 2) / 2
+V_0_u = v_out
+dV_0 = 1
+
+theta_p_l = -3
+theta_p_u = 4 
+dtheta_p = .5
+
+r_range = BEM_calculator.bld_df.r
+V_0 = np.arange(V_0_l, V_0_u + dV_0, dV_0)
+theta_p=np.arange(theta_p_l, theta_p_u + dtheta_p , dtheta_p)
+
+start = perf_counter()
+ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
+                                        theta_p_range=theta_p,
+                                        r_range=r_range,
+                                        r_range_type = "values",
+                                        gaulert_method="classic",
+                                        multiprocessing=True)
+end = perf_counter()
+print (f"Calculation took {end-start} s")
 
 
 
