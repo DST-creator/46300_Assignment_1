@@ -12,7 +12,7 @@ class Utils_BEM():
         
         source_folder = r"C:\Users\davis\00_data\00_Documents\01_Master_studies"\
                         + r"\46300 - WTT and Aerodynamics\01_Assigments"\
-                        + r"\00_Assignment_1\00_code\_00_rsc"
+                        + r"\00_code\_00_rsc"
         std_airfoil_files = [r'FFA-W3-2411.txt',
                              r'FFA-W3-301.txt',
                              r'FFA-W3-360.txt',
