@@ -1,10 +1,22 @@
-import os
+#%% Imports
+#General imports
 import numpy as np
 import pandas as pd
 import xarray as xr
 from scipy.interpolate import interp1d
+
+
+#File Handling imports
+import os
 from pathlib import Path
 
+#Plotting imports
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from mpl_toolkits import mplot3d
+from mpl_toolkits.mplot3d import Axes3D
+
+#%% Utils Class
 class Utils_BEM():
     def __init__(self, airfoil_files=[], bld_file="", t_airfoils = []):
         #Load the turbine data (incl. checking the inputs for the files)
@@ -257,7 +269,228 @@ class Utils_BEM():
             raise ValueError("Step width must be smaller than interval of"
                              + "r_min and r_max")
     
-        r_range = np.arange(r_min, r_max+dr/2, dr)
+        r_range = np.arange(r_min, r_max+dr, dr)
         
         return r_range, r_min, r_max, dr
         
+    def plot_3d_data(self, X, Y, Z, 
+                     xticks=np.array([]), yticks=np.array([]),
+                     plt_type="contour", azim=45, elev=30,
+                     labels=["x", "y", "z"], 
+                     exp_fld = "_03_export", fname ="", 
+                     return_obj=False):
+        """Plot a variable Z over a meshgrid X & Y as a contour or surface plot.
+        
+        Parameters:
+            X (m x n array):
+                X-values as a meshgrid
+            Y (m x n array):
+                Y-values as a meshgrid
+            Z (m x n array):
+                Z-values as a meshgrid
+            x_ticks (array-like - optional):
+                Tick values for the x-axis
+            y_ticks (array-like - optional):
+                Tick values for the y-axis
+            plt_type (str - optional):
+                Plot type. Can be either:
+                - 'contour': Contour plot with the Z-values as a colormap
+                - 'surface': 3d-surface plot
+            azim (int or float - optional):
+                Azimuth angle for the 3d view projection (only relevant for 
+                plt_type 'surface')
+            elev (int or float - optional):
+                Elevation angle for the 3d view projection (only relevant for 
+                plt_type 'surface')
+            labels (array-like - optional):
+                Labels for the three axes - Must have length 3!
+            fname (str - optional):
+                Folder in which to save the figure. Default: _03_export 
+                subfolder of current working directory
+            fname (str - optional):
+                Filename for export of the plot. If none is provided, a 
+                filename is chosen based on the z-label and the plot_type
+            return_obj (bool - optional):
+                Selection whether the figure and axes object should be returned
+            
+            
+        Returns: 
+            fig (matplotlib figure object):
+                The figure of the plot (only returned if return_obj=True)
+            ax (matplotlib figure object):
+                The axes of the plot (only returned if return_obj=True)
+        """
+        
+        if plt_type == "surface":
+            fig = plt.figure(figsize=(10,10))
+            ax = plt.axes(projection='3d')
+            ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+                        cmap="plasma", edgecolor='none')
+            ax.set_zlabel(labels[2])
+            ax.view_init(elev, azim)
+        elif plt_type == "contour":
+            fig,ax = plt.subplots(figsize=(16, 10))
+            contour = plt.contourf(X, Y, Z, 50, cmap='plasma')
+            plt.colorbar(contour, label=labels[2])
+        else:
+            print(f"Unknown plot type {plt_type}")
+            return
+        
+        ax.set_xlabel(labels[0])
+        ax.set_ylabel(labels[1])
+        if np.size(xticks)>1:
+            ax.set_xticks(xticks)
+        if np.size(yticks)>1:
+            ax.set_yticks(yticks)
+        
+        if not fname: fname= f"{labels[2].replace('$','')}_{plt_type}.svg"
+        
+        fig.savefig(fname = Path(exp_fld, fname))
+        
+        if return_obj:
+            return fig,ax
+        else:
+            plt.close(fig)
+            
+    def test_neg_a(self, r, tsr_range = np.arange(1,10,.5), 
+                   theta_p_range=np.arange(0,40,1), 
+                   a_0=0, a_p_0 =0):
+        """Plot exemplary operation range for a given tip speed ratio and 
+        pitch angle range at a specific radius r
+        
+        Parameters:
+            r (int or float):
+                Radius to evaluate
+            tsr_range (array-like):
+                Range of tip speed ratio values
+            theta_p_range  (array-like):
+                Range of pitch angles [deg]
+            a_0 (int or float):
+                Axial induction factor
+            a_p_0 (int or float):
+                tTangential induction factor
+            
+        Returns:
+            None
+        """
+        
+        c = np.interp(r, self.bld_df.r, self.bld_df.c) 
+        tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+        beta = np.interp(r, self.bld_df.r, self.bld_df.beta)
+        sigma = np.divide(c*self.B, 2*np.pi*r)
+        
+        phi_range =  np.rad2deg(np.arctan((np.divide(1-a_0, 
+                                        (1+a_p_0)*tsr_range) * self.R/r)))
+        
+        phi_mesh, theta_mesh = np.meshgrid(phi_range, theta_p_range)
+        phi_mesh_rad = np.deg2rad(phi_mesh)
+        
+        
+        aoa = phi_mesh - (beta + theta_mesh)
+        
+        C_l, C_d = np.zeros(aoa.shape), np.zeros(aoa.shape)
+        
+        for iy, ix in np.ndindex(aoa.shape):
+            C_l_i, C_d_i = self.interp_coeffs (aoa=aoa[iy, ix], 
+                                           tcr=tcr)
+            C_l[iy, ix], C_d[iy, ix] = C_l_i[0], C_d_i[0]
+        
+        #calculate normal and tangential force factors
+        C_n = C_l*np.cos(phi_mesh_rad) + C_d*np.sin(phi_mesh_rad)
+        C_t = C_l*np.sin(phi_mesh_rad) - C_d*np.cos(phi_mesh_rad)  
+        
+        #Calculate Prandtl correction factor
+        f_corr = self.B/2 * (self.R-r)/(r*np.sin(phi_mesh_rad)) 
+        F = 2/np.pi * np.arccos(np.exp(-f_corr))
+        
+        #Calculate induction factors
+        #Thrust coefficient (Eq. 6.40)
+        dC_T = np.divide(np.power(1-a_0, 2)*C_n*sigma,
+                        np.power(np.sin(phi_mesh_rad),2))
+        
+        # Temporary axial induction factor
+        if a_0 <.33:
+            a = np.divide (dC_T,
+                           4*F*(1-a_0))
+            
+            # Full formula in one line (C_T inserted)
+            # a_tmp = (sigma*C_n)/(4*F*np.power(np.sin(phi),2)) * (1-a_0)
+        else:
+            a = np.divide (dC_T,
+                           4*F*(1-.25 * (5-3*a_0) * a_0))
+        
+        # Temporary tangential induction factor
+        a_p = (1+a_p_0) * np.divide(sigma*C_t,
+                                    4*F*np.sin(phi_mesh_rad)*np.cos(phi_mesh_rad)) 
+        
+        
+        tsr_mesh, _ = np.meshgrid(tsr_range, theta_p_range)
+        
+        #Plot a
+        self.plot_3d_data(X=tsr_mesh, Y=theta_mesh, Z=a, 
+                         plt_type="contour", azim=100,
+                         labels=[r"$\lambda\:[-]$", 
+                                 r"$\theta_p\:[deg]$", 
+                                 r"$a$"],
+                         exp_fld = "_02_testing",
+                         fname = "a_operating_range_contour.svg")
+        
+        #Set negative a values to 0 and plot again
+        a[a<0]=0
+        self.plot_3d_data(X=tsr_mesh, Y=theta_mesh, Z=a, 
+                         plt_type="surface", azim=100,
+                         labels=[r"$\lambda\:[-]$", 
+                                 r"$\theta_p\:[deg]$", 
+                                 r"$a$"],
+                         exp_fld = "_02_testing",
+                         fname = "a_operating_range_surface.svg")
+        
+        
+        
+        #Plot a_p
+        self.plot_3d_data(X=tsr_mesh, Y=theta_mesh, Z=a_p, 
+                         plt_type="contour", 
+                         labels=[r"$\lambda\:[-]$", 
+                                 r"$\theta_p\:[deg]$", 
+                                 r"$a_p$"],
+                         exp_fld = "_02_testing",
+                         fname = "a_p_operating_range_contour.svg")
+        
+# =============================================================================
+#         #Plot as 2d lines
+#         fig, ax = plt.subplots(figsize=(16, 10))
+#         for z in range(len(theta_p_range)):
+#             ax.plot(tsr_range, a[z, :])
+#         ax.set_xlabel(r"$\lambda\:[-]$")
+#         ax.set_ylabel(r"$a$")
+#         plt.grid()
+#         
+#         plt.savefig(fname="./_03_export/" + "a_survey_2d.svg")
+#         plt.close(fig)
+# =============================================================================
+
+    def relax_parameter (self, x_tmp, x_0, f=.1):
+        """Overrelax the variable x by combining the temporary, approximated 
+        value x_tmp with the value from the previous iteration x_0 using the 
+        relaxation factor f
+        
+        Parameters:
+            x_tmp (float or array-like):
+                Temporary, approximated value for x
+            x_0 (float or array-like):
+                Value of x from the previous iteration
+            f (float or array-like):
+                Relaxation factor (default f=.1)
+            
+        Returns:
+            x (float or array-like):
+                Relaxed value for x
+        """
+        # #Check inputs
+        # # Check if the dimensions of the input values match (must be either 
+        # # scalar values or array-like of equal shape)
+        # x_tmp, x_0, f = self.check_dims (x_tmp, x_0, f)
+        
+        #Relax value
+        x = f*x_tmp + (1-f)*x_0 
+        return x
