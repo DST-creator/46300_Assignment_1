@@ -10,6 +10,9 @@ from scipy.interpolate import interp1d
 import os
 from pathlib import Path
 
+#Concurrency imports
+import ctypes
+
 #Plotting imports
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -494,3 +497,4 @@ class Utils_BEM():
         #Relax value
         x = f*x_tmp + (1-f)*x_0 
         return x
+    

@@ -7,7 +7,10 @@ import xarray as xr
 import math
 
 #Concurrency imports
+import ctypes
 import concurrent.futures
+from multiprocessing import Array as mpArray
+from multiprocessing import Value as mpValue
 
 #Optimization code imports
 from intersect import intersection
@@ -540,18 +543,6 @@ class BEM (Utils_BEM):
         
         return c_p, c_T, a_arr, a_p_arr, F_arr
     
-    def integ_dCp_numerical_madsen (self, tsr, theta_p, r_range,
-                                    c=-1, tcr=-1, beta=-np.inf, sigma=-1,
-                                    r_range_type = "values"):
-        """Partial function to integrade dC_p using the madsen method (needed
-        for the multiprocessing)"""
-        return self.integ_dCp_numerical (tsr=tsr, theta_p=theta_p, 
-                                         r_range=r_range, 
-                                         r_range_type = r_range_type,
-                                         c=c, tcr = tcr, beta = beta, 
-                                         sigma = sigma,
-                                         gaulert_method = "Madsen")
-    
     def dC_p (self, r, tsr, a=-1, a_p=-1, theta_p=0, 
               gaulert_method = "classic"):
         """Calculatest dC_p (the infinitesimal power coefficient for a annular
@@ -686,7 +677,35 @@ class BEM (Utils_BEM):
                                         r)
         
         return c_T
-         
+    
+    @staticmethod
+    def init_shared_memory(r_range_shared, c_shared, tcr_shared, beta_shared, 
+                           sigma_shared, gaulert_method_shared):
+        global r_range_global, c_global, tcr_global, beta_global, \
+            sigma_global, gaulert_method_global
+        
+        r_range_global = np.frombuffer(r_range_shared.get_obj(), 
+                                       dtype=ctypes.c_double)
+        c_global = np.frombuffer(c_shared.get_obj(), 
+                                 dtype=ctypes.c_double)
+        tcr_global = np.frombuffer(tcr_shared.get_obj(), 
+                                   dtype=ctypes.c_double)
+        beta_global = np.frombuffer(beta_shared.get_obj(), 
+                                    dtype=ctypes.c_double)
+        sigma_global = np.frombuffer(sigma_shared.get_obj(), 
+                                     dtype=ctypes.c_double)
+        gaulert_method_global = gaulert_method_shared.value.decode('utf-8')
+     
+    def integ_cp_worker (self, tsr, theta_p):
+        global r_range_global, c_global, tcr_global, beta_global, \
+            sigma_global, gaulert_method_global
+        return self.integ_dCp_numerical(tsr=tsr, theta_p=theta_p, 
+                                        r_range=r_range_global,  
+                                        r_range_type = "values",
+                                        c=c_global, tcr=tcr_global, 
+                                        beta=beta_global, sigma=sigma_global,
+                                        gaulert_method = gaulert_method_global)
+    
     def calc_cp (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
                       gaulert_method = "classic",
@@ -783,34 +802,59 @@ class BEM (Utils_BEM):
         sigma = np.divide(c*self.B, 2*np.pi*r_range)
         
         if multiprocessing:
+            r_range_shared = mpArray(ctypes.c_double, r_range)
+            c_shared = mpArray(ctypes.c_double, c)
+            tcr_shared = mpArray(ctypes.c_double, tcr)
+            beta_shared = mpArray(ctypes.c_double, beta)
+            sigma_shared = mpArray(ctypes.c_double, sigma)
+            gaulert_method_shared = mpArray(ctypes.c_char, 
+                                            gaulert_method.encode('utf-8'))
+            
+            
             #Multiprocessing with executor.map
-            with concurrent.futures.ProcessPoolExecutor() as executor:
+            with concurrent.futures.ProcessPoolExecutor(
+                    initializer=self.init_shared_memory, 
+                    initargs=(r_range_shared, c_shared, tcr_shared, 
+                              beta_shared, sigma_shared, 
+                              gaulert_method_shared)) as executor:
                 theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
                 theta_p_comb = theta_p_comb.flatten()
                 tsr_comb = tsr_comb.flatten()
                 
                 comb_len = len(tsr_comb)
                 
-                if gaulert_method == "classic":
-                    integrator_num = list(executor.map(self.integ_dCp_numerical,
-                                                tsr_comb,
-                                                np.deg2rad(theta_p_comb),
-                                                [r_range] * comb_len,
-                                                [c] * comb_len,
-                                                [tcr] * comb_len,
-                                                [beta] * comb_len,
-                                                [sigma] * comb_len,
-                                                np.full(comb_len, "values")))
-                else:
-                    integrator_num = list(executor.map(self.integ_dCp_numerical_madsen,
-                                                tsr_comb,
-                                                np.deg2rad(theta_p_comb),
-                                                [r_range] * comb_len,
-                                                [c] * comb_len,
-                                                [tcr] * comb_len,
-                                                [beta] * comb_len,
-                                                [sigma] * comb_len,
-                                                np.full(comb_len, "values")))
+                integrator_num = list(executor.map(self.integ_cp_worker,
+                                            tsr_comb,
+                                            np.deg2rad(theta_p_comb)))
+            # with concurrent.futures.ProcessPoolExecutor(
+            #         initializer=self.init_shared_memory, 
+            #         initargs=(r_range_shared, c_shared, tcr_shared, beta_shared, sigma_shared)) as executor:
+            #     theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
+            #     theta_p_comb = theta_p_comb.flatten()
+            #     tsr_comb = tsr_comb.flatten()
+                
+            #     comb_len = len(tsr_comb)
+                
+            #     if gaulert_method == "classic":
+            #         integrator_num = list(executor.map(self.integ_dCp_numerical,
+            #                                     tsr_comb,
+            #                                     np.deg2rad(theta_p_comb),
+            #                                     [r_range] * comb_len,
+            #                                     [c] * comb_len,
+            #                                     [tcr] * comb_len,
+            #                                     [beta] * comb_len,
+            #                                     [sigma] * comb_len,
+            #                                     np.full(comb_len, "values")))
+            #     else:
+            #         integrator_num = list(executor.map(self.integ_dCp_numerical_madsen,
+            #                                     tsr_comb,
+            #                                     np.deg2rad(theta_p_comb),
+            #                                     [r_range] * comb_len,
+            #                                     [c] * comb_len,
+            #                                     [tcr] * comb_len,
+            #                                     [beta] * comb_len,
+            #                                     [sigma] * comb_len,
+            #                                     np.full(comb_len, "values")))
                 
                 for i in range(comb_len):
                     ds_c["c_p"].loc[dict(tsr=tsr_comb[i],
@@ -907,18 +951,18 @@ class BEM (Utils_BEM):
                 combinations of the tip speed and pitch angle range
         """
         
-        r_range = BEM_calculator.bld_df.r
+        r_range = self.bld_df.r
         tsr = np.arange(tsr_lims[0], tsr_lims[1] + tsr_step, tsr_step)
         theta_p=np.arange(theta_p_lims[0], theta_p_lims[1] + theta_p_step , 
                           theta_p_step)
         
         start = perf_counter()
-        ds_cp, ds_bem = BEM_calculator.calc_cp (tsr_range=tsr, 
-                                                theta_p_range=theta_p,
-                                                r_range=r_range,
-                                                r_range_type = "values",
-                                                gaulert_method=gaulert_method,
-                                                multiprocessing=multiprocessing)
+        ds_cp, ds_bem = self.calc_cp (tsr_range=tsr, 
+                                      theta_p_range=theta_p,
+                                      r_range=r_range,
+                                      r_range_type = "values",
+                                      gaulert_method=gaulert_method,
+                                      multiprocessing=multiprocessing)
         end = perf_counter()
         print (f"C_p_max calculation took {end-start} s")
         
@@ -1149,6 +1193,14 @@ class BEM (Utils_BEM):
                          for r in r_range]))
         sigma = np.divide(c*self.B, 2*np.pi*r_range)
         
+        r_range_shared = mpArray(ctypes.c_double, r_range)
+        c_shared = mpArray(ctypes.c_double, c)
+        tcr_shared = mpArray(ctypes.c_double, tcr)
+        beta_shared = mpArray(ctypes.c_double, beta)
+        sigma_shared = mpArray(ctypes.c_double, sigma)
+        gaulert_method_shared = mpArray(ctypes.c_char, 
+                                        "classic".encode('utf-8'))
+        
         #Prepare theta_p_range for with the approximation function for theta_p
         # Search radius: +-1.5 deg around the estimated value, step .5
         theta_p_est = theta_p_approx_func(V_0_range)
@@ -1168,18 +1220,30 @@ class BEM (Utils_BEM):
             tsr_mesh = np.tile(tsr.reshape((-1,1)), 
                                (1,n_vars)).flatten()
             mesh_len = tsr_mesh.size
-
+            
             #Parallel processing of variable combinations
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                integrator_num = list(executor.map(self.integ_dCp_numerical,
+            with concurrent.futures.ProcessPoolExecutor(
+                    initializer=self.init_shared_memory, 
+                    initargs=(r_range_shared, c_shared, tcr_shared, 
+                              beta_shared, sigma_shared, 
+                              gaulert_method_shared)) as executor:
+                
+                integrator_num = list(executor.map(self.integ_cp_worker,
                                             tsr_mesh,
-                                            np.deg2rad(theta_p_mesh),
-                                            [r_range] * mesh_len,
-                                            [c] * mesh_len,
-                                            [tcr] * mesh_len,
-                                            [beta] * mesh_len,
-                                            [sigma] * mesh_len,
-                                            np.full(mesh_len, "values")))
+                                            np.deg2rad(theta_p_mesh)))
+            
+            
+            # #Parallel processing of variable combinations
+            # with concurrent.futures.ProcessPoolExecutor() as executor:
+            #     integrator_num = list(executor.map(self.integ_dCp_numerical,
+            #                                 tsr_mesh,
+            #                                 np.deg2rad(theta_p_mesh),
+            #                                 [r_range] * mesh_len,
+            #                                 [c] * mesh_len,
+            #                                 [tcr] * mesh_len,
+            #                                 [beta] * mesh_len,
+            #                                 [sigma] * mesh_len,
+            #                                 np.full(mesh_len, "values")))
             
             #Retrieve c_p values for each wind velocity and find theta_p which is 
             #closest to c_p_rtd
