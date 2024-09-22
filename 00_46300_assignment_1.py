@@ -326,6 +326,7 @@ class BEM (Utils_BEM):
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
                      a_0 = 0, a_p_0 = 0, dC_T_0 = 0,
+                     c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                      epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
@@ -383,10 +384,22 @@ class BEM (Utils_BEM):
                 Number of iteration
             
         """
-        c = np.interp(r, self.bld_df.r, self.bld_df.c)
-        tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
-        beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
-        sigma = np.divide(c*self.B, 2*np.pi*r)
+        if not np.isscalar(c):
+            raise TypeError("Input for c must be scalar")
+        elif c == -1:
+            c = np.interp(r, self.bld_df.r, self.bld_df.c)
+        if not np.isscalar(tcr):
+            raise TypeError("Input for tcr must be scalar")
+        elif tcr == -1:
+            tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
+        if not np.isscalar(beta):
+            raise TypeError("Input for beta must be scalar")
+        elif beta == -np.inf:
+            beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
+        if not np.isscalar(sigma):
+            raise TypeError("Input for sigma must be scalar")
+        elif sigma == -1:
+            sigma = np.divide(c*self.B, 2*np.pi*r)
         
 ########################################################################################
         # tcr = 100    
@@ -440,6 +453,7 @@ class BEM (Utils_BEM):
         return a, a_p, F, conv_res, n
 
     def integ_dCp_numerical (self, tsr, theta_p, r_range,
+                             c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
                              gaulert_method = "classic"):
         """Integrate the infinitesimal power coefficient over the rotor radius
@@ -456,6 +470,18 @@ class BEM (Utils_BEM):
                 Tip speed ratio [-]
             theta_p (int or float):
                 Pitch angle of the blades [rad]
+            c (array-like - optional):
+                Chord length for all radii sections [m]. If no value is 
+                provided, is is calculated  from the inputs. 
+            tcr (array-like - optional):
+                Thickness to chord ratio for all radii sections [-]. If no 
+                value is provided, is is calculated from the inputs. 
+            beta (array-like - optional):
+                Twist angle for all radii sections [rad]. If no value is 
+                provided, is is calculated from the inputs. 
+            sigma (array-like - optional):
+                Solidity for all radii sections [-]. If no value is provided, 
+                is is calculated from the inputs. 
             gaulert_method (str):
                 Selection of the approach to use for the calculation of the 
                 induction factors.
@@ -494,6 +520,9 @@ class BEM (Utils_BEM):
         for i,r in enumerate(r_range):
             a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
+                                                    c=c[i], tcr=tcr[i], 
+                                                    beta=beta[i], 
+                                                    sigma=sigma[i],
                                                     theta_p=theta_p,
                                                     gaulert_method =
                                                     gaulert_method)
@@ -519,6 +548,8 @@ class BEM (Utils_BEM):
         return self.integ_dCp_numerical (tsr=tsr, theta_p=theta_p, 
                                          r_range=r_range, 
                                          r_range_type = r_range_type,
+                                         c=c, tcr = tcr, beta = beta, 
+                                         sigma = sigma,
                                          gaulert_method = "Madsen")
     
     def dC_p (self, r, tsr, a=-1, a_p=-1, theta_p=0, 
@@ -1247,7 +1278,8 @@ if __name__ == "__main__":
     
     #Calculate C_p values
     c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True)
+        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True, 
+                                    multiprocessing=True)
 
 #%% Task 2
     
