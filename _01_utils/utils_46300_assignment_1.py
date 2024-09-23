@@ -498,3 +498,33 @@ class Utils_BEM():
         x = f*x_tmp + (1-f)*x_0 
         return x
     
+    @staticmethod
+    def plot_weibull(A=9, k=1.9):
+        
+        V_range = np.arange(0, 31)
+        h_w = k/A*np.power(V_range/A, k-1)*np.exp(-np.power(V_range/A, k))
+        h_w_cum = 1- np.exp(-np.power(V_range/A, k))
+        
+        # Plot probability distribution over wind speed
+        fig, ax1 = plt.subplots(figsize=(16, 10))
+        plt_dist = ax1.plot(V_range, h_w*100, ls="-", 
+                            label = "Weibull distribution")
+        ax1.set_xlabel('$V_0\:[m/s]$')
+        ax1.set_ylabel('$h_w\:[\%]$')
+        ax1.grid()
+        
+        # Plot cumulative probability over wind speed
+        ax2 = ax1.twinx()
+        plt_cum = ax2.plot(V_range, h_w_cum*100, ls="--", 
+                           label = "Weibull cumulative density function")
+        ax2.set_ylabel('$h_{w,cum}\:[\%]$')
+        
+        
+        lns = plt_dist+plt_cum
+        labs = [l.get_label() for l in lns]
+        ax1.legend(lns, labs, loc="center right")
+        
+        plt.savefig(fname="./_03_export/Weibull_dist.svg",
+                    bbox_inches = "tight")
+        plt.close(fig)
+    
