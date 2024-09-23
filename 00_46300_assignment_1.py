@@ -11,6 +11,7 @@ import ctypes
 import concurrent.futures
 from multiprocessing import Array as mpArray
 from multiprocessing import Value as mpValue
+from numba import jit
 
 #Optimization code imports
 from intersect import intersection
@@ -119,7 +120,7 @@ class BEM (Utils_BEM):
         
         return phi
     
-    def calc_solidity (self, r):
+    def calc_solidity (self, r, c=-1):
         """Calculates the solidity of a blade at a certain radius
         
         Parameters:
@@ -130,11 +131,15 @@ class BEM (Utils_BEM):
             sigma (scalar numerical value or array-like):
                 Blade solidity at radius r [-]
         """
-        return (self.c*self.B)/(2*np.pi*r)
+        
+        if c==-1:
+            c = np.interp(r, self.bld_df.r, self.bld_df.c)
+        
+        return (c*self.B)/(2*np.pi*r)
 
     def calc_ind_factors(self, r, tsr, theta_p = np.pi, 
                          a_0 = 0, a_p_0 = 0, dC_T_0 = 0, 
-                         c=-1, tcr=-1, beta=-np.inf, sigma=-1, phi=-np.inf,
+                         c=-1, tcr=-1, beta=-np.inf, sigma=-1,
                          f=.1, gaulert_method = "classic"):
         """Calulation of the induced velocity factors from the equations of the
         blade element momentum theory.
@@ -208,21 +213,6 @@ class BEM (Utils_BEM):
         # later on. This region is known to be mathematically unstable
         if r>=.995*self.R:
             return np.zeros(4)
-        # if np.isscalar(r):
-        #     if r>=.995*self.R:
-        #         return np.zeros(4)
-        # else:
-        #     # Radii for which p_T and p_N should be zero
-        #     i_end = np.where(r>=.995*self.R)
-        #     r_end = r[i_end]
-            
-        #     # Radii for which the calculation needs to be performed
-        #     i_valid = np.where(r<.995*self.R)
-        #     r = r[i_valid]
-        #     if a_0.size>1: a_0 = a_0[i_valid]
-        #     if a_p_0.size>1: a_p_0 = a_p_0[i_valid]
-        #     if tsr.size>1: tsr = tsr[i_valid]
-        #     if theta_p.size>1: theta_p = theta_p[i_valid]
         
         #Interpolate thickness and chord length and beta
         if c == -1:
@@ -233,9 +223,8 @@ class BEM (Utils_BEM):
             beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
         
         #Calculate the angle of attack
-        if phi ==-np.inf:
-            phi =  np.arctan((np.divide(1-a_0, 
-                                        (1+a_p_0)*tsr) * self.R/r).astype(float))
+        phi =  np.arctan((np.divide(1-a_0, 
+                                    (1+a_p_0)*tsr) * self.R/r).astype(float))
         theta = theta_p + beta
         
         aoa = phi-theta
@@ -279,12 +268,7 @@ class BEM (Utils_BEM):
             a_p = (1+a_p_0) * np.divide(sigma*C_t,
                                         4*F*np.sin(phi)*np.cos(phi)) 
             
-            #Append the radii which were >=.98*R (for these, p_T and p_N should be 
-            #zero)
-            if not np.isscalar(r):
-                a = np.append (a, np.zeros(r_end.shape))
-                a_p = np.append (a_p, np.zeros(r_end.shape))
-                F = np.append (F, np.zeros(r_end.shape))
+
             
             a = self.relax_parameter(x_tmp=a, x_0=a_0, f=f)
             a_p = self.relax_parameter(x_tmp=a_p, x_0=a_p_0, f=f)
@@ -300,13 +284,6 @@ class BEM (Utils_BEM):
             #Tangential induction factor without corrections (Eq. 6.36):
             a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
                        - 1) 
-            
-            #Append the radii which were >=.98*R (for these, p_T and p_N should be 
-            #zero)
-            if not np.isscalar(r):
-                a = np.append (a, np.zeros(r_end.shape))
-                a_p = np.append (a_p, np.zeros(r_end.shape))
-                F = np.append (F, np.zeros(r_end.shape))
         
         #Check results for invalid values
         if not np.isscalar(r):
@@ -417,7 +394,7 @@ class BEM (Utils_BEM):
         
         
         a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
-                                          a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0,
+                                          a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0, 
                                           c=c, tcr = tcr, beta=beta, sigma=sigma,
                                           gaulert_method=gaulert_method)
         n = 1
@@ -593,7 +570,7 @@ class BEM (Utils_BEM):
         
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
-            a, a_p, F, _, _ = self.converge_BEM(r=r, 
+            a, a_p, F, _, _= self.converge_BEM(r=r, 
                                                 tsr=tsr, 
                                                 theta_p=theta_p,
                                                 gaulert_method = gaulert_method)
@@ -1338,6 +1315,74 @@ class BEM (Utils_BEM):
         
         return AEP, P, f_weibull
 
+      
+    def calc_task_six (self, r=80.14, tsr = 8, 
+                       c_bounds = [0,3], dc=.5,
+                       theta_p_bounds = [-20, 20], dtheta_p=2):
+        for i in range (2):
+            c_range = np.arange(c_bounds[0], c_bounds[1]+dc, dc)
+            theta_p_range = np.arange(theta_p_bounds[0], theta_p_bounds[1]+dtheta_p,
+                                 dtheta_p)
+            
+            #Prepare dataset for the values
+            ds_res = xr.Dataset(
+                {},
+                coords={"c":c_range,
+                        "theta_p":theta_p_range}
+                )
+            
+            ds_res_shape = [len(c_range), len(theta_p_range)]
+            
+            ds_res["a"] = (list(ds_res.coords.keys()),
+                           np.empty(ds_res_shape))
+            ds_res["a_p"] = (list(ds_res.coords.keys()),
+                           np.empty(ds_res_shape))
+            ds_res["dC_p"] = (list(ds_res.coords.keys()),
+                           np.empty(ds_res_shape))
+            
+            for c in c_range:
+                sigma = self.calc_solidity(r, c)
+                for theta_p in theta_p_range:
+                    a, a_p, _, _, _ = self.converge_BEM(r=r, tsr=tsr, 
+                                                        theta_p = np.deg2rad(theta_p), 
+                                                        c=c, sigma = sigma)
+                    dC_p = dc_p = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
+                    
+                    #Save results to dataframe
+                    ds_res["a"].loc[dict(c=c,theta_p=theta_p)] = a[0]
+                    ds_res["a_p"].loc[dict(c=c,theta_p=theta_p)] = a_p[0]
+                    ds_res["dC_p"].loc[dict(c=c,theta_p=theta_p)] = dC_p[0]
+            
+            # Find the coordinates where the maximum value occurs
+            max_item = ds_res["dC_p"].where(ds_res["dC_p"]==ds_res["dC_p"].max(), 
+                                            drop=True)
+            # Convert the coordinates to a dictionary for easy access
+            coord_dict = {dim: round(coord.values.item(),3) 
+                          for dim, coord in max_item.coords.items()}
+            c_max, theta_p_max = coord_dict.values()
+            a_max = ds_res["a"].sel(c=c_max, 
+                                    theta_p = theta_p_max, 
+                                    method = "nearest").values
+            a_p_max = ds_res["a_p"].sel(c=c_max, 
+                                    theta_p = theta_p_max, 
+                                    method = "nearest").values
+            phi_max = self.arctan_phi (a=a_max, a_p=a_p_max, r=r, tsr=tsr)
+            
+            #Preparation for Second round
+            c_bounds = [c_max-dc,c_max+dc]
+            if c_bounds[0]<0: c_bounds[0]=0
+            theta_p_bounds = [theta_p_max-dtheta_p, theta_p_max+dtheta_p]
+            dc = .1
+            dtheta_p=.1
+            
+            del ds_res
+            
+            yield c_max, theta_p_max, phi_max
+        
+        
+                
+        
+        
             
 #%% Main    
 if __name__ == "__main__":
@@ -1382,53 +1427,55 @@ if __name__ == "__main__":
     
     #%% Task 1
     
-# =============================================================================
-#     #Calculate C_p values
-#     c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-#         BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True, 
-#                                     multiprocessing=True)
-# 
-# #%% Task 2
-#     
-#     #Calculate V_rated and omega_max
-#     V_rtd, omega_max, rpm_max = BEM_calculator.find_v_rtd(plot_graphs=True)
-# 
-# #%% Task 3
-# 
-#     df_theta_p, approx_func = BEM_calculator.find_pitch_above_rtd()
-# 
-#     #Plot the results and compare to values from report
-#     V_0 = np.arange (4,26)
-#     theta_p_correct = np.array([2.751, 1.966, 0.896, 0, 0, 0, 0, 0, 4.4502, 
-#                                 7.266, 9.292, 10.958, 12.499, 13.896, 15.2, 
-#                                 16.432, 17.618, 18.758, 19.860, 20.927, 21.963, 
-#                                 22.975])
-#     
-#     V_0_rated = 11
-#     i_rtd = np.where(V_0==V_0_rated)[0][0]
-# 
-#     fig, ax = plt.subplots(figsize=(16, 10))
-#     ax.scatter(V_0, theta_p_correct, label="correct values", marker = "+")
-#     ax.plot(df_theta_p.V_0, df_theta_p.theta_p, 
-#             label="BEM calculation")
-#     ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
-#             label="Approximation function")
-#     ax.grid()
-#     ax.set_xlabel(r"$V_0\:[m/s]$")
-#     ax.set_ylabel(r"$\theta_p\:[^{\circ}]$")
-#     ax.set_xticks(np.arange(v_in,v_out+1))
-#     ax.set_yticks(np.arange(0,25))
-#     plt.savefig("_03_export/theta_p.svg", bbox_inches = "tight")
-#     plt.close(fig)
-# 
-# =============================================================================
+    #Calculate C_p values
+    c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True, 
+                                    multiprocessing=True)
+
+#%% Task 2
+    
+    #Calculate V_rated and omega_max
+    V_rtd, omega_max, rpm_max = BEM_calculator.find_v_rtd(plot_graphs=True)
+
+#%% Task 3
+
+    df_theta_p, approx_func = BEM_calculator.find_pitch_above_rtd()
+
+    #Plot the results and compare to values from report
+    V_0 = np.arange (4,26)
+    theta_p_correct = np.array([2.751, 1.966, 0.896, 0, 0, 0, 0, 0, 4.4502, 
+                                7.266, 9.292, 10.958, 12.499, 13.896, 15.2, 
+                                16.432, 17.618, 18.758, 19.860, 20.927, 21.963, 
+                                22.975])
+    
+    V_0_rated = 11
+    i_rtd = np.where(V_0==V_0_rated)[0][0]
+
+    fig, ax = plt.subplots(figsize=(16, 10))
+    ax.scatter(V_0, theta_p_correct, label="correct values", marker = "+")
+    ax.plot(df_theta_p.V_0, df_theta_p.theta_p, 
+            label="BEM calculation")
+    ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
+            label="Approximation function")
+    ax.grid()
+    ax.set_xlabel(r"$V_0\:[m/s]$")
+    ax.set_ylabel(r"$\theta_p\:[^{\circ}]$")
+    ax.set_xticks(np.arange(v_in,v_out+1))
+    ax.set_yticks(np.arange(0,25))
+    plt.savefig("_03_export/theta_p.svg", bbox_inches = "tight")
+    plt.close(fig)
+
 #%% Task 5
     AEP, P, f_weibull = BEM_calculator.calc_AEP(A=9, k=1.9, 
                                                 v_out=-1, V_rtd=12,
                                                 c_p_max=.4989)
+    
     BEM_calculator.plot_weibull()
     
 #%% Task 6
 
+    task_six_gen = BEM_calculator.calc_task_six()
     
-    
+    c_max, theta_p_max, phi_max = next(task_six_gen)
+    c_max, theta_p_max, phi_max = next(task_six_gen)
+    phi_max = np.rad2deg(phi_max)
