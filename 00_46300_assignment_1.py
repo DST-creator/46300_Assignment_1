@@ -11,7 +11,6 @@ import ctypes
 import concurrent.futures
 from multiprocessing import Array as mpArray
 from multiprocessing import Value as mpValue
-from numba import jit
 
 #Optimization code imports
 from intersect import intersection
@@ -792,20 +791,22 @@ class BEM (Utils_BEM):
             
             
             #Multiprocessing with executor.map
+            theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
+            theta_p_comb = theta_p_comb.flatten()
+            tsr_comb = tsr_comb.flatten()
+            
+            comb_len = len(tsr_comb)
+            csize = int(np.ceil(comb_len/6))
             with concurrent.futures.ProcessPoolExecutor(
                     initializer=self.init_shared_memory, 
                     initargs=(r_range_shared, c_shared, tcr_shared, 
                               beta_shared, sigma_shared, 
-                              gaulert_method_shared)) as executor:
-                theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
-                theta_p_comb = theta_p_comb.flatten()
-                tsr_comb = tsr_comb.flatten()
-                
-                comb_len = len(tsr_comb)
-                
+                              gaulert_method_shared),
+                    max_workers=6) as executor:
                 integrator_num = list(executor.map(self.integ_cp_worker,
                                             tsr_comb,
-                                            np.deg2rad(theta_p_comb)))
+                                            np.deg2rad(theta_p_comb),
+                                            chunksize=csize))
             # with concurrent.futures.ProcessPoolExecutor(
             #         initializer=self.init_shared_memory, 
             #         initargs=(r_range_shared, c_shared, tcr_shared, beta_shared, sigma_shared)) as executor:
@@ -1201,16 +1202,20 @@ class BEM (Utils_BEM):
                                (1,n_vars)).flatten()
             mesh_len = tsr_mesh.size
             
+            csize = int(np.ceil(mesh_len/6))
+            
             #Parallel processing of variable combinations
             with concurrent.futures.ProcessPoolExecutor(
                     initializer=self.init_shared_memory, 
                     initargs=(r_range_shared, c_shared, tcr_shared, 
                               beta_shared, sigma_shared, 
-                              gaulert_method_shared)) as executor:
+                              gaulert_method_shared),
+                    max_workers=6) as executor:
                 
                 integrator_num = list(executor.map(self.integ_cp_worker,
                                             tsr_mesh,
-                                            np.deg2rad(theta_p_mesh)))
+                                            np.deg2rad(theta_p_mesh),
+                                            chunksize = csize))
 
             #Retrieve c_p values for each wind velocity and find theta_p which is 
             #closest to c_p_rtd
@@ -1429,7 +1434,8 @@ if __name__ == "__main__":
     
     #Calculate C_p values
     c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True, 
+        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True,
+                                    gaulert_method="classic",
                                     multiprocessing=True)
 
 #%% Task 2
