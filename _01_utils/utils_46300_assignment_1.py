@@ -279,7 +279,7 @@ class Utils_BEM():
     def plot_3d_data(self, X, Y, Z, 
                      xticks=np.array([]), yticks=np.array([]),
                      plt_type="contour", azim=45, elev=30,
-                     labels=["x", "y", "z"], 
+                     labels=["x", "y", "z"], unit_z = "-",
                      exp_fld = "_03_export", fname ="", 
                      return_obj=False):
         """Plot a variable Z over a meshgrid X & Y as a contour or surface plot.
@@ -324,17 +324,23 @@ class Utils_BEM():
                 The axes of the plot (only returned if return_obj=True)
         """
         
+        if not unit_z == "-":
+            label_z = labels[2] + "$\:[" + unit_z +"]$"
+        else:
+            label_z = labels[2]
+        
         if plt_type == "surface":
             fig = plt.figure(figsize=(10,10))
             ax = plt.axes(projection='3d')
             ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
                         cmap="plasma", edgecolor='none')
-            ax.set_zlabel(labels[2])
+            ax.set_zlabel(label_z)
             ax.view_init(elev, azim)
         elif plt_type == "contour":
             fig,ax = plt.subplots(figsize=(16, 10))
             contour = plt.contourf(X, Y, Z, 50, cmap='plasma')
-            plt.colorbar(contour, label=labels[2])
+            plt.colorbar(contour, 
+                         label=label_z)
         else:
             print(f"Unknown plot type {plt_type}")
             return

@@ -1012,20 +1012,26 @@ class BEM (Utils_BEM):
         omega = self.tsr_max*V_0/self.R
         self.V_rtd = intersection(V_0, P, 
                                [self.v_in, self.v_out], 
-                               [P_rtd, P_rtd])[0][0]
+                               [self.P_rtd, self.P_rtd])[0][0]
         self.omega_max = self.tsr_max*self.V_rtd/self.R
         rpm_max = self.omega_max * 60 / (2*np.pi)
         
         if plot_graphs:
             # Plot Power over wind speed
             fig, ax = plt.subplots(figsize=(16, 10))
-            ax.plot(V_0, P/1e6, label = "Power curve")
+            ax.plot(V_0, P/1e6, 
+                    c="k",
+                    label = "Power curve")
             ax.axvline(self.V_rtd, ls="--", lw=1.5, color="k")
-            # ax.text(0.2, P_rtd/1e6*1.03, '$P_{rated}$', color='k', va='center', ha='center',
-            #     transform=ax.get_yaxis_transform())
-            ax.axhline(P_rtd/1e6, ls="--", lw=1.5, color="k")
-            # ax.text(self.V_rated*.98, .2, '$V_{rated}$', color='k', va='center', ha='center',
-            #     transform=ax.get_xaxis_transform(), rotation="vertical")
+            ax.text(0.2, self.P_rtd/1e6*1.03, 
+                    "$P_{rated}=" + f"{self.P_rtd/1e6}" + "\:[MW]$", 
+                    color='k', va='center', ha='center', size = "medium",
+                transform=ax.get_yaxis_transform())
+            ax.axhline(self.P_rtd/1e6, ls="--", lw=1.5, color="k")
+            ax.text(self.V_rtd*.98, .2, 
+                    "$V_{rated}=" + f"{round(self.V_rtd,2)}"+ "\:[m/s]$", 
+                    color='k', va='center', ha='center', size = "medium",
+                    transform=ax.get_xaxis_transform(), rotation="vertical")
             # ax.set_title('Power curve')
             ax.set_xlabel('$V_0\:[m/s]$')
             ax.set_ylabel('$P\:[MW]$')
@@ -1460,8 +1466,10 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(figsize=(16, 10))
     ax.scatter(V_0, theta_p_correct, label="correct values", marker = "+")
     ax.plot(df_theta_p.V_0, df_theta_p.theta_p, 
+            c="k", ls="-", lw=1.5,
             label="BEM calculation")
     ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
+            c="k", ls="--", lw=1.5,
             label="Approximation function")
     ax.grid()
     ax.set_xlabel(r"$V_0\:[m/s]$")
