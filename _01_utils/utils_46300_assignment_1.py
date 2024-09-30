@@ -19,6 +19,52 @@ import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import Axes3D
 
+#%%Global plot settings
+
+#Figure size:
+mpl.rcParams['figure.figsize'] = (16, 8)  
+
+#Lines and markers
+mpl.rcParams['lines.linewidth'] = 1.2
+mpl.rcParams['lines.markersize'] = 10
+mpl.rcParams['scatter.marker'] = "+"
+mpl.rcParams['lines.color'] = "k"
+mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])
+# Cycle through linestyles with color black instead of different colors
+# mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])\
+#                                 + mpl.cycler('linestyle', ['-', '--', '-.', ':'])
+
+#Text sizes
+mpl.rcParams['font.size'] = 25
+mpl.rcParams['xtick.labelsize'] = 20
+mpl.rcParams['ytick.labelsize'] = 20
+mpl.rcParams['axes.labelsize'] = 25
+mpl.rcParams['axes.titlesize'] = 30
+mpl.rcParams['legend.fontsize'] = 25
+
+#Padding
+mpl.rcParams['figure.subplot.top'] = .94    #Distance between suptitle and subplots
+mpl.rcParams['xtick.major.pad'] = 5         
+mpl.rcParams['ytick.major.pad'] = 5
+# mpl.rcParams['ztick.major.pad'] = 5
+mpl.rcParams['axes.labelpad'] = 20
+
+#Latex font
+mpl.rcParams['text.usetex'] = True          #Use standard latex font
+mpl.rcParams['font.family'] = 'serif'  # LaTeX default font family
+mpl.rcParams["pgf.texsystem"] = "pdflatex"  # Use pdflatex for generating PDFs
+mpl.rcParams["pgf.rcfonts"] = False  # Ignore Matplotlib's default font settings
+mpl.rcParams['text.latex.preamble'] = "\n".join([r'\usepackage{amsmath}',  # Optional, for math symbols
+                                                 r'\usepackage{siunitx}'])
+mpl.rcParams.update({"pgf.preamble": "\n".join([ # plots will use this preamble
+        r"\usepackage[utf8]{inputenc}",
+        r"\usepackage[T1]{fontenc}",
+        r"\usepackage{amsmath}",
+        r"\usepackage[detect-all,locale=DE]{siunitx}",
+        ])})
+#Export
+mpl.rcParams['savefig.bbox'] = "tight"
+
 #%% Utils Class
 class Utils_BEM():
     def __init__(self, airfoil_files=[], bld_file="", t_airfoils = []):
@@ -338,7 +384,7 @@ class Utils_BEM():
             ax.view_init(elev, azim)
         elif plt_type == "contour":
             fig,ax = plt.subplots(figsize=(16, 10))
-            contour = plt.contourf(X, Y, Z, 50, cmap='plasma')
+            contour = plt.contourf(X, Y, Z, 80, cmap='plasma')
             plt.colorbar(contour, 
                          label=label_z)
         else:

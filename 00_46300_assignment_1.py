@@ -32,22 +32,51 @@ from _01_utils.utils_46300_assignment_1 import Utils_BEM
 import warnings
 
 #%%Global plot settings
+
+#Figure size:
+mpl.rcParams['figure.figsize'] = (16, 8)  
+
+#Lines and markers
 mpl.rcParams['lines.linewidth'] = 1.2
 mpl.rcParams['lines.markersize'] = 10
-mpl.rcParams['font.size'] = 18
-mpl.rcParams['xtick.labelsize'] = 18
-mpl.rcParams['ytick.labelsize'] = 18
-mpl.rcParams['axes.labelsize'] = 20
-mpl.rcParams['axes.titlesize'] = 25
-mpl.rcParams['legend.fontsize'] = 20
+mpl.rcParams['scatter.marker'] = "+"
+mpl.rcParams['lines.color'] = "k"
+mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])
+# Cycle through linestyles with color black instead of different colors
+# mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])\
+#                                 + mpl.cycler('linestyle', ['-', '--', '-.', ':'])
+
+#Text sizes
+mpl.rcParams['font.size'] = 25
+mpl.rcParams['xtick.labelsize'] = 20
+mpl.rcParams['ytick.labelsize'] = 20
+mpl.rcParams['axes.labelsize'] = 25
+mpl.rcParams['axes.titlesize'] = 30
+mpl.rcParams['legend.fontsize'] = 25
+
+#Padding
 mpl.rcParams['figure.subplot.top'] = .94    #Distance between suptitle and subplots
 mpl.rcParams['xtick.major.pad'] = 5         
 mpl.rcParams['ytick.major.pad'] = 5
 # mpl.rcParams['ztick.major.pad'] = 5
 mpl.rcParams['axes.labelpad'] = 20
+
+#Latex font
 mpl.rcParams['text.usetex'] = True          #Use standard latex font
 mpl.rcParams['font.family'] = 'serif'  # LaTeX default font family
-mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'  # Optional, for math symbols
+mpl.rcParams["pgf.texsystem"] = "pdflatex"  # Use pdflatex for generating PDFs
+mpl.rcParams["pgf.rcfonts"] = False  # Ignore Matplotlib's default font settings
+mpl.rcParams['text.latex.preamble'] = "\n".join([r'\usepackage{amsmath}',  # Optional, for math symbols
+                                                 r'\usepackage{siunitx}'])
+mpl.rcParams.update({"pgf.preamble": "\n".join([ # plots will use this preamble
+        r"\usepackage[utf8]{inputenc}",
+        r"\usepackage[T1]{fontenc}",
+        r"\usepackage{amsmath}",
+        r"\usepackage[detect-all,locale=DE]{siunitx}",
+        ])})
+
+#Export
+mpl.rcParams['savefig.bbox'] = "tight"
 
 #%% BEM Calculator
 class BEM (Utils_BEM):
@@ -284,26 +313,6 @@ class BEM (Utils_BEM):
             a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
                        - 1) 
         
-        #Check results for invalid values
-        if not np.isscalar(r):
-            if any([np.any(a<0 * a>=1), np.any(a_p<0)]):
-                print(f"Warning: Invalid a or a_p for r = {r}")
-            
-            a[a<0] = 0
-            a[a>=1] = .99999
-            a_p[a_p==-1] = -.9999999
-        else:
-            if a<0: 
-                a=np.array([0])
-                # print(f"Warning: a<0for r = {r}")
-            elif a>=1: 
-                a =np.array([.99])
-                # print(f"Warning: a>1 for r = {r}")
-            
-            if a_p==-1:
-                a_p = np.array([-.9999999])
-                # print(f"Warning: a_p<0 for r = {r}")
-        
         return a, a_p, F, dC_T
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
@@ -403,9 +412,26 @@ class BEM (Utils_BEM):
                 print(f"Maximum iteration number reached before convergence")
                 break
             a_0, a_p_0 = a, a_p
+            
+            #Check validity of a & a_p
+            if a_0<0: 
+                a_0_corr=0.0
+                # print(f"Warning: a<0for r = {r}")
+            elif a_0>=1: 
+                a_0_corr = .99
+                # print(f"Warning: a>1 for r = {r}")
+            else:
+                a_0_corr = a_0
+            
+            if a_p==-1:
+                a_p_0_corr = -.9999999
+                # print(f"Warning: a_p<0 for r = {r}")
+            else:
+                a_p_0_corr = a_p_0
+                
             a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr = tsr, 
                                                     theta_p=theta_p, 
-                                                    a_0=a_0, a_p_0=a_p_0, 
+                                                    a_0=a_0_corr, a_p_0=a_p_0_corr, 
                                                     dC_T_0 = dC_T_0,
                                                     f = f,
                                                     c=c, 
@@ -416,19 +442,25 @@ class BEM (Utils_BEM):
                                                     gaulert_method)
 
             n +=1
+            
         
 # =============================================================================
 #         if n<=500:
 #             print(f"Calculation stopped after {n} iteration")
 # =============================================================================
         
-        # #Print warning for invalid a values
-        # if a == 0:
-        #     print((f"Warning: a=0 for tsr = {tsr}, "+
-        #            f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
-        # elif a ==.99:
-        #     print((f"Warning: a>=1 for tsr = {tsr}, "+
-        #            f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
+# =============================================================================
+#         #Print warning for invalid a values
+#         if a < 0:
+#             print((f"Warning: a=0 for tsr = {tsr}, "+
+#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
+#         if a > 1:
+#             print((f"Warning: a>=1 for tsr = {tsr}, "+
+#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
+#         elif a_p == -1:
+#             print((f"Warning: a>=1 for tsr = {tsr}, "+
+#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
+# =============================================================================
         
         conv_res = (abs(a-a_0), abs(a_p-a_p_0))
         
@@ -495,7 +527,22 @@ class BEM (Utils_BEM):
         else:
             raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
                              " or 'values'")
-
+        
+        if type(c)== int and c == -1:
+            c = np.array([np.interp(r, self.bld_df.r, self.bld_df.c) 
+                          for r in r_range])
+        if type(tcr)== int and tcr == -1:
+            tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+                            for r in r_range])
+        if type(beta) in [int, float] and beta == -np.inf:
+            beta = np.array([np.deg2rad(np.interp(r, 
+                                                  self.bld_df.r, 
+                                                  self.bld_df.beta)) 
+                             for r in r_range])
+        if type(sigma)== int and sigma == -1:
+            sigma = np.divide(c*self.B, 2*np.pi*np.array(r_range))
+        
+        #Calculat induction factors
         a_arr = np.array(np.zeros(len(r_range)))
         a_p_arr = np.array(np.zeros(len(r_range)))
         F_arr = np.array(np.zeros(len(r_range)))
@@ -513,6 +560,7 @@ class BEM (Utils_BEM):
             a_p_arr[i] = a_p_i.item()
             F_arr[i] = F_i.item()
         
+        #Calculate power coefficient
         dc_p = self.dC_p (r=r_range, tsr=tsr, 
                           a=a_arr, a_p=a_p_arr, theta_p=theta_p)
         dc_T = self.dC_T (r=r_range, a=a_arr, F=F_arr) 
@@ -920,7 +968,7 @@ class BEM (Utils_BEM):
             tsr_max (float):
                 Tip speed ratio at which the local power coefficient maximum 
                 occurs
-            theta_p_max (float):
+            _ (float):
                 Pitch angle at which the local power coefficient maximum 
                 occurs
             ds_c (xarray dataset):
@@ -1109,45 +1157,31 @@ class BEM (Utils_BEM):
                 c=c, tcr=tcr, beta=beta, sigma=sigma,
                 gaulert_method="classic")
             
-# =============================================================================
-#             if np.any(np.where(a==0)):
-#                 r_a0 = r_range[np.where(a==0)]
-#                 print(f"a=0 found for theta_p = {theta_p}, for "
-#                       + f"r = {np.around(r_range[np.where(a==0)],1)}")
-# =============================================================================
-            
             if cp>=c_p_rtd:
                 break
         
         #Search in smaller radius around the found value
-        theta_p_radius = 3
-        dtheta_p = .5
-        for i in range(2):
+        theta_p_radius_lst = [3, .4, .09]
+        dtheta_p_lst = [.5, .1, .01]
+        
+        for i in range(len(theta_p_radius_lst)):
+            theta_p_radius = theta_p_radius_lst[i]
+            dtheta_p = dtheta_p_lst[i]
+            
             for theta_p in np.arange(theta_p+theta_p_radius,
                                      theta_p-(theta_p_radius+dtheta_p), 
                                      -dtheta_p):
-                cp, _, _, _, _ = self.integ_dCp_numerical (
+                c_p, _, _, _, _ = self.integ_dCp_numerical (
                     tsr=tsr, theta_p=np.deg2rad(theta_p), 
                     r_range=r_range, r_range_type="values",
                     c=c, tcr=tcr, beta=beta, sigma=sigma,
                     gaulert_method="classic")
-                
-    # =============================================================================
-    #             if np.any(np.where(a==0)):
-    #                 r_a0 = r_range[np.where(a==0)]
-    #                 print(f"a=0 found for theta_p = {theta_p}, for "
-    #                       + f"r = {np.around(r_range[np.where(a==0)],1)}")
-    # =============================================================================
-                
-                if cp>=c_p_rtd:
+
+                if c_p>=c_p_rtd:
                     break
-            
-            #Search radius for second iteration
-            theta_p_radius = .4
-            dtheta_p = .1
         
         #Final value for theta_p
-        theta_p_max = round(theta_p, 1)
+        theta_p_max = round(theta_p, 3)
         del theta_p
         
         #Fit a approximation curve to the two points (V_0=V_rated, theta_p=0)
@@ -1194,8 +1228,14 @@ class BEM (Utils_BEM):
         theta_p_radius = 3
         dtheta_p = .5
         
+        theta_p_radius_lst = [3, .4]
+        dtheta_p_lst = [.5, .1]
+        
         start = perf_counter()
-        for i in range(2):
+        for i in range(len(theta_p_radius_lst)):
+            theta_p_radius = theta_p_radius_lst[i]
+            dtheta_p = dtheta_p_lst[i]
+            
             theta_p_var = np.arange(-theta_p_radius, theta_p_radius + dtheta_p, 
                                     dtheta_p)                                       #Variation around estimated value
             n_vars = theta_p_var.size
@@ -1231,6 +1271,9 @@ class BEM (Utils_BEM):
                 theta_p_i = theta_p_mesh[i_v*n_vars:(i_v+1)*n_vars]
                 i = np.asarray(c_p_i<=c_p_rtd[i_v]).nonzero()[0]
                 
+                if V_0_range[i_v] == 22:
+                    pass
+                
                 if i.size>=1:
                     i_above = i[-1]
                     #Explanation for the index i: First all indices are found for 
@@ -1251,18 +1294,14 @@ class BEM (Utils_BEM):
                     # the actual pitch angle
                     theta_p_est[i_v] = \
                         round(np.interp(c_p_rtd[i_v],
-                                        [c_p_i[i_below], c_p_i[i_above]],
-                                        [theta_p_i[i_below], theta_p_i[i_above]],
+                                        [c_p_i[i_above], c_p_i[i_below]],
+                                        [theta_p_i[i_above], theta_p_i[i_below]]
                                         )
-                              , 1)
+                              , 3)
                     
                 else:
                     print("Warning: Pitch angle not found in search range for "
                           + f"V_0={V_0_range[i_v]}")
-            
-            #Change search radius for 2nd iteration
-            theta_p_radius = .5
-            dtheta_p = .1
         
         #Save and return final values
         V_0_ext = np.append(np.insert(V_0_range, 0, self.V_rtd), v_out)
@@ -1274,16 +1313,74 @@ class BEM (Utils_BEM):
           
         return self.df_theta_p, theta_p_approx_func
 
-    def aero_power (self, V_in, v_out, V_rtd=-1, c_p_max=-1):
+    def aero_power (self, V_in, v_out=-1, V_rtd=-1, c_p_max=-1, theta_p_ar = {},
+                    calc_above_rtd=False):
+        """Calculates the aerodynamic power for given wind speed values.
+        
+        
+        Parameters:
+            V_in (array-like):
+                The wind speeds to calculate the power for (in m/s)
+            v_out (int or float):
+                The cut-out wind speed in m/s
+            V_rtd (int or float - optional):
+                The rated wind speed in m/s. If this parameter is not specified, 
+                the value from the class attribute is used or it is calculated
+                using find_v_rtd
+            c_p_max (float - optional):
+                The power coefficient. If this parameter is not specified, 
+                the value from the class attribute is used or it is calculated
+                using find_c_p_max
+            theta_p_ar (dict or pandas Dataframe - optional):
+                The pitch angles for the wind speeds in degrees in the form of
+                of a dict or DataFrame with two keys 'V_0' and 'theta_p'. 
+                If this parameter is not specified, the values from the class 
+                attribute is used or it is calculated using find_pitch_above_rtd.
+                
+                Not needed if calc_above_rtd is set to False
+            calc_above_rtd (Bool - optional):
+                Selection whether the power in the above rated region should be
+                calculated using the pitch angles and the BEM, or simply set to
+                P_rated.
+                For wind speeds, where the pitch angles are not explicitly
+                given, they are linearly inter-/extrapolated from the given 
+                values
+            
+        Returns
+            P (numpy array):
+                The calculated aerodynamic power of the rotor
+        
+        """
+        
+        
+        
+        if not set (["V_0", "theta_p"]) == set (theta_p_ar.keys()):     
+            if not hasattr(self, 'df_theta_p'): #I.e. if C_p,max has not been calculated yet
+                print("Calculating Pitch angles for above rated wind speed region")
+                theta_p_ar, _ = self.find_pitch_above_rtd()
+            else:
+                theta_p_ar = self.df_theta_p
+        elif type(theta_p_ar) == dict:
+            theta_p_ar = pd.DataFrame(theta_p_ar)
+        theta_p_ar.sort_values(by="V_0", ascending=True, inplace=True)
+        
+        
         if V_rtd==-1: 
             if not hasattr(self, 'V_rtd'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating V_rtd")
                 V_rtd, _, _ = self.find_v_rtd(plot_graphs=False)
+            else:
+                V_rtd = self.V_rtd
         
         if c_p_max==-1:
             if not hasattr(self, 'c_p_max'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating c_p_max")
                 c_p_max, _, _, _, _ = self.find_c_p_max(plot_2d=False, plot_3d=False)    
+            else:
+                c_p_max = self.c_p_max
+        
+        if v_out == -1:
+            v_out = self.v_out
         
         V_in = np.array(V_in)
         P = np.full(V_in.shape, self.P_rtd)
@@ -1292,6 +1389,21 @@ class BEM (Utils_BEM):
         P[I_below_rtd] =  .5*self.rho*np.pi*(self.R**2)\
                             *np.power(V_in[I_below_rtd],3)*c_p_max
         del I_below_rtd
+        
+        if calc_above_rtd:
+            I_above_rtd = np.argwhere(V_in>=V_rtd).flatten()
+            for i in I_above_rtd:
+                tsr = self.omega_max*self.R/V_in[i]
+                
+                theta_p = np.interp(V_in[i], 
+                                    theta_p_ar["V_0"], 
+                                    theta_p_ar["theta_p"])
+                
+                c_p, _, _, _, _= self.integ_dCp_numerical(tsr=tsr, 
+                                                          theta_p=np.deg2rad(theta_p),
+                                                          r_range = self.bld_df.r)
+                P[i] =  .5*self.rho*np.pi*(self.R**2)\
+                                    *np.power(V_in[i],3)*c_p
         
         I_below_in = V_in<self.v_in
         P[I_below_in] =  0
@@ -1303,6 +1415,37 @@ class BEM (Utils_BEM):
         return P
 
     def calc_AEP(self, A=9, k=1.9, v_out=-1, V_rtd=-1, c_p_max=-1):
+        """Calculates the annual energy production for a given weibull 
+        distribution.
+        
+        Parameters:
+            A (int or float - optional):
+                Scale parameter of the weibull distribution (default: 9)
+            k (int or float - optional):
+                Shape parameter of the weibull distribution (default: 1.9)
+            v_out (int or float - optional):
+                Cut-out wind speed of the turbine.
+                If this parameter is not specified, the values from the class 
+                attribute is used
+            V_rtd (int or float - optional):
+                Rated wind speed of the turbine in m/s
+                If this parameter is not specified, the values from the class 
+                attribute is used or it is calculated using find_v_rtd
+            c_p_max (int or float - optional):
+                Maximum power coefficient of the turbine
+                If this parameter is not specified, the values from the class 
+                attribute is used or it is calculated using find_c_p_max
+            
+            
+        Returns:
+            AEP (float):
+                The annual energy production in Wh
+            P (array-like):
+                The power of the turbine for the considered wind speed step
+            f_weibull (array-like):
+                The probability of each wind speed step
+        """
+        
         if c_p_max==-1: 
             if not hasattr(self, 'c_p_max'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating c_p_max")
@@ -1390,11 +1533,30 @@ class BEM (Utils_BEM):
             
             yield c_max, theta_p_max, phi_max
         
+    def insert_test_values(self):
+        """Insert the previously determined results into the class
         
-                
+        Parameters:
+            None
         
+        Returns:
+            None:
+        """
         
+        self.c_p_max = 0.49891433710148764
+        self.tsr_max = 7.5
+        self.theta_p_max = .4
+        self.V_rtd = 11.169317205114034
+        self.omega_max = 0.9394401596765196
+        
+        V_0 = np.concatenate((np.array([self.V_rtd]), np.arange(12,26)))
+        theta_p = [0.0, 5.9, 8.5, 10.4, 12.1, 13.6, 14.9, 16.2, 17.4, 18.5, 19.6, 20.7, 21.7, 22.7, 23.5]
+        self.df_theta_p = pd.DataFrame(dict(V_0 = V_0,
+                                            theta_p = theta_p))
+
             
+
+
 #%% Main    
 if __name__ == "__main__":
     R = 89.17
@@ -1439,8 +1601,14 @@ if __name__ == "__main__":
     #%% Task 1
     
     #Calculate C_p values
+    # c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+    #     BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True,
+    #                                 gaulert_method="classic",
+    #                                 multiprocessing=True)
     c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-        BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True,
+        BEM_calculator.find_c_p_max(tsr_lims = [7.2,7.7], tsr_step = .1, 
+                                    theta_p_lims = [-.1, .9], theta_p_step = .1,
+                                    plot_2d=True, plot_3d=True,
                                     gaulert_method="classic",
                                     multiprocessing=True)
 
@@ -1460,7 +1628,7 @@ if __name__ == "__main__":
                                 16.432, 17.618, 18.758, 19.860, 20.927, 21.963, 
                                 22.975])
     
-    V_0_rated = 11
+    V_0_rated = np.floor(V_rtd)
     i_rtd = np.where(V_0==V_0_rated)[0][0]
 
     fig, ax = plt.subplots(figsize=(16, 10))
@@ -1478,6 +1646,27 @@ if __name__ == "__main__":
     ax.set_yticks(np.arange(0,25))
     plt.savefig("_03_export/theta_p.svg", bbox_inches = "tight")
     plt.close(fig)
+    
+    #Plot the full power curve
+    # BEM_calculator.insert_test_values()
+    V_0 = np.arange (4,26).astype(float)
+    V_0_ext = np.insert(V_0, 
+                        np.argwhere(V_0>=BEM_calculator.V_rtd)[0][0],
+                        BEM_calculator.V_rtd)
+    P_full = BEM_calculator.aero_power(V_in=V_0_ext, mode="exact")
+    
+    fig, ax = plt.subplots(figsize=(16, 10))
+    ax.plot(V_0_ext, P_full*1e-6, 
+            c="k", ls="-", lw=1.5,
+            label="BEM calculation")
+    ax.axhline(BEM_calculator.P_rtd*1e-6, c="k", ls="--", lw=1.2)
+    
+    ax.grid()
+    ax.set_xlabel(r"$V_0\:[m/s]$")
+    ax.set_ylabel(r"$P\:[MW]$")
+    ax.set_xticks(np.arange(v_in,v_out+1))
+    plt.savefig("_03_export/Power_curve_full.svg", bbox_inches = "tight")
+    plt.close(fig)
 
 #%% Task 5
     AEP, P, f_weibull = BEM_calculator.calc_AEP(A=9, k=1.9, 
@@ -1490,6 +1679,6 @@ if __name__ == "__main__":
 
     task_six_gen = BEM_calculator.calc_task_six()
     
-    c_max, theta_p_max, phi_max = next(task_six_gen)
-    c_max, theta_p_max, phi_max = next(task_six_gen)
+    c_max, theta_p_max6, phi_max = next(task_six_gen)
+    c_max, theta_p_max6, phi_max = next(task_six_gen)
     phi_max = np.rad2deg(phi_max)
