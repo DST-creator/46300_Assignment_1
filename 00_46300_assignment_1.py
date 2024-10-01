@@ -52,13 +52,12 @@ mpl.rcParams['xtick.labelsize'] = 20
 mpl.rcParams['ytick.labelsize'] = 20
 mpl.rcParams['axes.labelsize'] = 25
 mpl.rcParams['axes.titlesize'] = 30
-mpl.rcParams['legend.fontsize'] = 25
+mpl.rcParams['legend.fontsize'] = 20
 
 #Padding
 mpl.rcParams['figure.subplot.top'] = .94    #Distance between suptitle and subplots
 mpl.rcParams['xtick.major.pad'] = 5         
 mpl.rcParams['ytick.major.pad'] = 5
-# mpl.rcParams['ztick.major.pad'] = 5
 mpl.rcParams['axes.labelpad'] = 20
 
 #Latex font
@@ -634,8 +633,8 @@ class BEM (Utils_BEM):
         i_valid = np.where(r<.995*self.R)
         r = r[i_valid]
         if np.array(a).size>1: a = a[i_valid]
-        if np.array(a_p.size)>1: a_p = a_p[i_valid]
-        if np.array(tsr.size)>1: tsr = tsr[i_valid]
+        if np.array(a_p).size>1: a_p = a_p[i_valid]
+        if np.array(tsr).size>1: tsr = tsr[i_valid]
         
         #Calculate dc_p and append 0 for all points in the last 2 % of the 
         #rotor radius
@@ -672,8 +671,8 @@ class BEM (Utils_BEM):
         # Radii for which the calculation needs to be performed
         i_valid = np.where(r<.995*self.R)
         r = r[i_valid]
-        if a.size>1: a = a[i_valid]
-        if F.size>1: F = F[i_valid]
+        if np.array(a).size>1: a = a[i_valid]
+        if np.array(F).size>1: F = F[i_valid]
         
         #Calculate dc_p and append 0 for all points in the last 2 % of the 
         #rotor radius
@@ -855,35 +854,6 @@ class BEM (Utils_BEM):
                                             tsr_comb,
                                             np.deg2rad(theta_p_comb),
                                             chunksize=csize))
-            # with concurrent.futures.ProcessPoolExecutor(
-            #         initializer=self.init_shared_memory, 
-            #         initargs=(r_range_shared, c_shared, tcr_shared, beta_shared, sigma_shared)) as executor:
-            #     theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
-            #     theta_p_comb = theta_p_comb.flatten()
-            #     tsr_comb = tsr_comb.flatten()
-                
-            #     comb_len = len(tsr_comb)
-                
-            #     if gaulert_method == "classic":
-            #         integrator_num = list(executor.map(self.integ_dCp_numerical,
-            #                                     tsr_comb,
-            #                                     np.deg2rad(theta_p_comb),
-            #                                     [r_range] * comb_len,
-            #                                     [c] * comb_len,
-            #                                     [tcr] * comb_len,
-            #                                     [beta] * comb_len,
-            #                                     [sigma] * comb_len,
-            #                                     np.full(comb_len, "values")))
-            #     else:
-            #         integrator_num = list(executor.map(self.integ_dCp_numerical_madsen,
-            #                                     tsr_comb,
-            #                                     np.deg2rad(theta_p_comb),
-            #                                     [r_range] * comb_len,
-            #                                     [c] * comb_len,
-            #                                     [tcr] * comb_len,
-            #                                     [beta] * comb_len,
-            #                                     [sigma] * comb_len,
-            #                                     np.full(comb_len, "values")))
                 
                 for i in range(comb_len):
                     ds_c["c_p"].loc[dict(tsr=tsr_comb[i],
@@ -1005,6 +975,9 @@ class BEM (Utils_BEM):
         coord_dict = {dim: round(coord.values.item(),3) 
                       for dim, coord in max_coords.items()}
         self.tsr_max, self.theta_p_max = coord_dict.values()
+        self.c_T_max = float(ds_cp["c_T"].sel(tsr = self.tsr_max, 
+                                        theta_p = self.theta_p_max,
+                                        method="nearest"))
         
         if plot_2d or plot_3d:
             #Prepare meshgrids
@@ -1013,17 +986,31 @@ class BEM (Utils_BEM):
             cT_mesh = ds_cp["c_T"].values.T
             tsr_ticks = np.arange(tsr[0], tsr[1] + tsr_step, 1)
             theta_p_ticks = np.arange(theta_p[0], theta_p[1] + theta_p_step, 1)
-            label_lst = [r'$\lambda\:[-]$', r'$\theta_p\:[^{\circ}]$']
+            label_lst = [r'$\lambda$', r'$\theta_p\:\unit{[\degree]}$']
         
         if plot_2d:
             #Plot C_p
             self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
                               xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="contour", labels=label_lst + [r"$C_p$"])
+                              plt_type="contour", labels=label_lst + [r"$C_p$"],
+                              hline=self.theta_p_max, 
+                              hline_label=r"$\theta_p=" + str(self.theta_p_max) 
+                                          + r"\:\unit{\degree}$",
+                              vline=self.tsr_max, 
+                              vline_label=r"$\lambda=" 
+                                          + str(self.tsr_max) + r"$",
+                              intersect_label=r"$C_{p,max}=" + 
+                                              str(round(self.c_p_max,3)) + r"$")
             #Plot C_T
             self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
                               xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="contour", labels=label_lst + [r"$C_T$"])
+                              plt_type="contour", labels=label_lst + [r"$C_T$"],
+                              hline=self.theta_p_max, 
+                              hline_label=r"$\theta_p=" + str(self.theta_p_max) 
+                                          + r"\:\unit{\degree}$",
+                              vline=self.tsr_max, 
+                              vline_label=r"$\lambda=" 
+                                          + str(self.tsr_max) + r"$")
         
         if plot_3d:
             #Plot C_p
@@ -1069,38 +1056,54 @@ class BEM (Utils_BEM):
             fig, ax = plt.subplots(figsize=(16, 10))
             ax.plot(V_0, P/1e6, 
                     c="k",
-                    label = "Power curve")
-            ax.axvline(self.V_rtd, ls="--", lw=1.5, color="k")
+                    label = "Power curve", zorder=3)
+            ax.axvline(self.V_rtd, ls="--", lw=1.5, color="k", zorder=2)
+            ax.text(self.V_rtd*.97, .2, 
+                    "$V_{rated}=" + f"{round(self.V_rtd,2)}"+ r"\:\unit{[\m/\s]}$", 
+                    color='k', va='center', ha='center', size = "medium",
+                    transform=ax.get_xaxis_transform(), rotation="vertical", 
+                    zorder=4)
+            ax.axhline(self.P_rtd/1e6, ls="--", lw=1.5, color="k", zorder=2)
             ax.text(0.2, self.P_rtd/1e6*1.03, 
-                    "$P_{rated}=" + f"{self.P_rtd/1e6}" + "\:[MW]$", 
+                    "$P_{rated}=" + f"{self.P_rtd/1e6}" + r"\:\unit{MW}$", 
                     color='k', va='center', ha='center', size = "medium",
-                transform=ax.get_yaxis_transform())
-            ax.axhline(self.P_rtd/1e6, ls="--", lw=1.5, color="k")
-            ax.text(self.V_rtd*.98, .2, 
-                    "$V_{rated}=" + f"{round(self.V_rtd,2)}"+ "\:[m/s]$", 
-                    color='k', va='center', ha='center', size = "medium",
-                    transform=ax.get_xaxis_transform(), rotation="vertical")
+                transform=ax.get_yaxis_transform(), 
+                zorder=4)
             # ax.set_title('Power curve')
-            ax.set_xlabel('$V_0\:[m/s]$')
-            ax.set_ylabel('$P\:[MW]$')
-            ax.grid()
+            ax.set_xlabel(r'$V_0\:\unit{[\m/\s]}$')
+            ax.set_ylabel(r'$P\:\unit{[\MW]}$')
+            ax.grid(zorder=1)
             
-            plt.savefig(fname="./_03_export/Power_curve.svg",
-                        bbox_inches = "tight")
+            fname = "_03_export/Power_curve"
+            fig.savefig(fname+".svg")
+            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
             plt.close(fig)
             
             
             # Plot omega over wind speed
             fig, ax = plt.subplots(figsize=(16, 10))
-            ax.plot(V_0, omega, label = "Power curve")
-            ax.axvline(self.V_rtd, ls="--", lw=1.5, color="k")
-            # ax.set_title('$\omega$ over the wind speed')
-            ax.set_xlabel('$V_0\:[m/s]$')
-            ax.set_ylabel('$\omega\:[{rad}/s]$')
-            ax.grid()
+            ax.plot(V_0, omega, zorder=3)
+            ax.axhline(self.omega_max, ls="--", lw=1.5, color="k", zorder=2)
+            ax.text(0.2, self.omega_max*1.02, 
+                    "$\omega_{max}=" + f"{round(self.omega_max,3)}" + r"\:\unit{rad/\s}$", 
+                    color='k', va='bottom', ha='center', size = "medium",
+                transform=ax.get_yaxis_transform(), 
+                zorder=4)
+            ax.axvline(self.V_rtd, ls="--", lw=1.5, color="k", zorder=2)
+            ax.text(self.V_rtd*.97, .2, 
+                    "$V_{rated}=" + f"{round(self.V_rtd,2)}"+ r"\:\unit{[\m/\s]}$", 
+                    color='k', va='center', ha='center', size = "medium",
+                    transform=ax.get_xaxis_transform(), rotation="vertical", 
+                    zorder=4)
+            ax.set_xlabel(r'$V_0\:\unit{[\m/\s]}$')
+            ax.set_ylabel(r'$\omega\:\unit{[{rad}/\s]}$')
+            ax.grid(zorder=1)
             
-            plt.savefig(fname="./_03_export/omega_over_V0.svg",
-                        bbox_inches = "tight")
+            fname = "_03_export/omega_over_V0"
+            fig.savefig(fname+".svg")
+            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
             plt.close(fig)
             
         return self.V_rtd, self.omega_max, rpm_max
@@ -1181,18 +1184,18 @@ class BEM (Utils_BEM):
                     break
         
         #Final value for theta_p
-        theta_p_max = round(theta_p, 3)
+        theta_p_out = round(theta_p, 3)
         del theta_p
         
-        #Fit a approximation curve to the two points (V_0=V_rated, theta_p=0)
-        # and (V_0=v_out, theta_p=theta_p_max)
+        #Fit a approximation curve to the two points (V_0=V_rated, 
+        #theta_p=self.theta_p_max) and (V_0=v_out, theta_p=theta_p_out)
         def power(x, a, b, c=-1.0):
             return a + b * x ** c
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             popt, _ = optimize.curve_fit(power, [self.V_rtd, self.v_out],
-                                         [0, theta_p_max], 
+                                         [self.theta_p_max, theta_p_out], 
                                          p0=[0,0])
         theta_p_approx_func = lambda V_0: power(x=V_0, a=popt[0], b=popt[1])
 
@@ -1305,7 +1308,8 @@ class BEM (Utils_BEM):
         
         #Save and return final values
         V_0_ext = np.append(np.insert(V_0_range, 0, self.V_rtd), v_out)
-        theta_p_ext = np.append(np.insert(theta_p_est, 0, 0), theta_p_max)
+        theta_p_ext = np.append(np.insert(theta_p_est, 0, self.theta_p_max), 
+                                theta_p_out)
         self.df_theta_p  = pd.DataFrame(dict(V_0 = V_0_ext,
                                              theta_p = theta_p_ext))
         end = perf_counter()
@@ -1314,7 +1318,7 @@ class BEM (Utils_BEM):
         return self.df_theta_p, theta_p_approx_func
 
     def aero_power (self, V_in, v_out=-1, V_rtd=-1, c_p_max=-1, theta_p_ar = {},
-                    calc_above_rtd=False):
+                    calc_thrust=False, calc_exact=False):
         """Calculates the aerodynamic power for given wind speed values.
         
         
@@ -1338,22 +1342,30 @@ class BEM (Utils_BEM):
                 attribute is used or it is calculated using find_pitch_above_rtd.
                 
                 Not needed if calc_above_rtd is set to False
-            calc_above_rtd (Bool - optional):
+            calc_exact (Bool - optional):
                 Selection whether the power in the above rated region should be
                 calculated using the pitch angles and the BEM, or simply set to
                 P_rated.
                 For wind speeds, where the pitch angles are not explicitly
                 given, they are linearly inter-/extrapolated from the given 
                 values
+            calc_thrust (Bool - optional):
+                Selection whether the thrust calculated.
+                Note: for this option, 'calc_exact' must be set to True
             
         Returns
             P (numpy array):
-                The calculated aerodynamic power of the rotor
+                The calculated aerodynamic power of the rotor [W]
+            C_p (numpy array):
+                The calculated power coefficient of the rotor
+            T (numpy array):
+                The calculated Thrust of the rotor [N]
+            C_T (numpy array):
+                The calculated Thrust coefficient of the rotor
         
         """
         
-        
-        
+        #Check inputs
         if not set (["V_0", "theta_p"]) == set (theta_p_ar.keys()):     
             if not hasattr(self, 'df_theta_p'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating Pitch angles for above rated wind speed region")
@@ -1363,7 +1375,6 @@ class BEM (Utils_BEM):
         elif type(theta_p_ar) == dict:
             theta_p_ar = pd.DataFrame(theta_p_ar)
         theta_p_ar.sort_values(by="V_0", ascending=True, inplace=True)
-        
         
         if V_rtd==-1: 
             if not hasattr(self, 'V_rtd'): #I.e. if C_p,max has not been calculated yet
@@ -1382,16 +1393,44 @@ class BEM (Utils_BEM):
         if v_out == -1:
             v_out = self.v_out
         
+        if calc_thrust and not calc_exact:
+            raise ValueError("For the thrust calculation, the calculation mode"
+                             + "must be set to 'exact'")
+        
+        #Prepare arrays
         V_in = np.array(V_in)
         P = np.full(V_in.shape, self.P_rtd)
+        c_p = np.zeros(V_in.shape)
         
-        I_below_rtd = V_in<V_rtd
-        P[I_below_rtd] =  .5*self.rho*np.pi*(self.R**2)\
-                            *np.power(V_in[I_below_rtd],3)*c_p_max
+        if calc_thrust:
+            T = np.zeros(V_in.shape)
+            c_T = np.zeros(V_in.shape)
+        
+        #Below rated
+        I_below_rtd = np.logical_and(V_in<V_rtd, V_in>=self.v_in)
+        if calc_exact:
+            for i in np.argwhere(I_below_rtd).flatten():
+                c_p[i], c_T_i, _, _, _= self.integ_dCp_numerical(
+                    tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
+                    r_range = self.bld_df.r)
+                
+                P[i] = self.available_power(V=V_in[i], rho = self.rho, 
+                                            R=self.R) * c_p[i]
+                
+                if calc_thrust:
+                    c_T[i] = c_T_i
+                    T[i] = c_T_i*.5*self.rho*np.pi*(self.R**2)*np.power(V_in[i],2)
+        else:
+           c_p[I_below_rtd]  = c_p_max
+           P[I_below_rtd]  = self.available_power(V=V_in[I_below_rtd], 
+                                           rho = self.rho, 
+                                           R=self.R) * c_p_max
         del I_below_rtd
         
-        if calc_above_rtd:
-            I_above_rtd = np.argwhere(V_in>=V_rtd).flatten()
+        #Above rated
+        if calc_exact:
+            I_above_rtd = np.argwhere(np.logical_and(V_in>=V_rtd, 
+                                                     V_in<=v_out)).flatten()
             for i in I_above_rtd:
                 tsr = self.omega_max*self.R/V_in[i]
                 
@@ -1399,20 +1438,32 @@ class BEM (Utils_BEM):
                                     theta_p_ar["V_0"], 
                                     theta_p_ar["theta_p"])
                 
-                c_p, _, _, _, _= self.integ_dCp_numerical(tsr=tsr, 
-                                                          theta_p=np.deg2rad(theta_p),
-                                                          r_range = self.bld_df.r)
-                P[i] =  .5*self.rho*np.pi*(self.R**2)\
-                                    *np.power(V_in[i],3)*c_p
+                c_p[i], c_T_i, _, _, _= self.integ_dCp_numerical(
+                    tsr=tsr,  theta_p=np.deg2rad(theta_p),
+                    r_range = self.bld_df.r)
+                P[i] = self.available_power(V=V_in[i], rho = self.rho, 
+                                            R=self.R) * c_p[i]
+                if calc_thrust:
+                    c_T[i] = c_T_i
+                    T[i] = c_T_i*.5*self.rho*np.pi*(self.R**2)*np.power(V_in[i],2)
+        else:
+            I_above_rtd = np.logical_and(V_in>=V_rtd,V_in<=v_out)
+            c_p[I_above_rtd] = self.P_rtd/self.available_power(
+                V=V_in[I_above_rtd], rho = self.rho, R=self.R)
         
+        #Below cut-in
         I_below_in = V_in<self.v_in
         P[I_below_in] =  0
         del I_below_in
 
+        #Above cut out
         I_above_out = V_in>v_out
         P[I_above_out] =  0
-
-        return P
+        
+        if calc_thrust:
+            return P, T, c_p, c_T
+        else:
+            return P, c_p
 
     def calc_AEP(self, A=9, k=1.9, v_out=-1, V_rtd=-1, c_p_max=-1):
         """Calculates the annual energy production for a given weibull 
@@ -1450,11 +1501,15 @@ class BEM (Utils_BEM):
             if not hasattr(self, 'c_p_max'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating c_p_max")
                 c_p_max, _, _, _, _ = self.find_c_p_max(plot_2d=False, plot_3d=False)
+            else:
+                c_p_max = self.c_p_max
         
         if V_rtd==-1: 
             if not hasattr(self, 'V_rtd'): #I.e. if C_p,max has not been calculated yet
                 print("Calculating V_rtd")
                 V_rtd, _, _ = self.find_v_rtd(plot_graphs=False)
+            else:
+                V_rtd = self.V_rtd
         
         if v_out==-1: v_out = self.v_out
         
@@ -1462,8 +1517,9 @@ class BEM (Utils_BEM):
         
         f_weibull = np.exp(-np.power(V_range/A, k))
         
-        P = self.aero_power (V_in=V_range, v_out=v_out, 
-                             V_rtd=V_rtd, c_p_max=c_p_max)
+        P,_, = self.aero_power (V_in=V_range, v_out=v_out, 
+                             V_rtd=V_rtd, c_p_max=c_p_max,
+                             calc_exact=False)
         
         AEP = np.sum((P[1:]+P[0:-1])/2 * (f_weibull[0:-1]-f_weibull[1:]) *8760)
         
@@ -1472,7 +1528,8 @@ class BEM (Utils_BEM):
       
     def calc_task_six (self, r=80.14, tsr = 8, 
                        c_bounds = [0,3], dc=.5,
-                       theta_p_bounds = [-20, 20], dtheta_p=2):
+                       theta_p_bounds = [-20, 20], dtheta_p=2,
+                       plot_graphs = False):
         for i in range (2):
             c_range = np.arange(c_bounds[0], c_bounds[1]+dc, dc)
             theta_p_range = np.arange(theta_p_bounds[0], theta_p_bounds[1]+dtheta_p,
@@ -1500,7 +1557,7 @@ class BEM (Utils_BEM):
                     a, a_p, _, _, _ = self.converge_BEM(r=r, tsr=tsr, 
                                                         theta_p = np.deg2rad(theta_p), 
                                                         c=c, sigma = sigma)
-                    dC_p = dc_p = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
+                    dC_p  = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
                     
                     #Save results to dataframe
                     ds_res["a"].loc[dict(c=c,theta_p=theta_p)] = a[0]
@@ -1521,6 +1578,28 @@ class BEM (Utils_BEM):
                                     theta_p = theta_p_max, 
                                     method = "nearest").values
             phi_max = self.arctan_phi (a=a_max, a_p=a_p_max, r=r, tsr=tsr)
+            
+            if plot_graphs:
+                #Prepare meshgrids
+                c_mesh, theta_p_mesh = np.meshgrid(c_range, theta_p_range)
+                cp_mesh = ds_res["dC_p"].values.T
+                
+                label_lst = [r'$c\:\unit{[\m]}$', 
+                             r'$\theta_p\:\unit{[\degree]}$',
+                             r"$C_p$"]
+                    
+                self.plot_3d_data(X=c_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+                                  plt_type="contour", 
+                                  fname = f"C_p_local_{i}",
+                                  labels=label_lst,
+                                  hline=theta_p_max, 
+                                  hline_label=r"$\theta_p=" + str(theta_p_max) 
+                                              + r"\:\unit{\degree}$",
+                                  vline=c_max, 
+                                  vline_label=r"$\lambda=" + str(c_max) + r"$",
+                                  intersect_label=r"$C_{p,max}=" + 
+                                                  str(round(max_item.item(),4)) 
+                                                  + r"$")
             
             #Preparation for Second round
             c_bounds = [c_max-dc,c_max+dc]
@@ -1573,6 +1652,13 @@ if __name__ == "__main__":
                            v_out = v_out,
                            rho = rho)
     
+    Calc_sel = dict(T1=True,
+                    T2=False, 
+                    T3=False, 
+                    T5=False, 
+                    T6=False)
+    
+    
     #Plot operating range
     # BEM_calculator.test_neg_a(r=41, a_0=.3, a_p_0=0)
 #%% Test for Exercise values    
@@ -1599,86 +1685,179 @@ if __name__ == "__main__":
     
     
     #%% Task 1
-    
-    #Calculate C_p values
-    # c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-    #     BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True,
-    #                                 gaulert_method="classic",
-    #                                 multiprocessing=True)
-    c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-        BEM_calculator.find_c_p_max(tsr_lims = [7.2,7.7], tsr_step = .1, 
-                                    theta_p_lims = [-.1, .9], theta_p_step = .1,
-                                    plot_2d=True, plot_3d=True,
-                                    gaulert_method="classic",
-                                    multiprocessing=True)
+    if Calc_sel ["T1"]:
+# =============================================================================
+#         #Medium resolution, full search area
+#         Calculate C_p values
+#         c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+#             BEM_calculator.find_c_p_max(plot_2d=True, plot_3d=True,
+#                                         gaulert_method="classic",
+#                                         multiprocessing=True)
+# =============================================================================
+        
+        #Fine resolution, full search area
+        c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+            BEM_calculator.find_c_p_max(tsr_step = .1, 
+                                        theta_p_step = .1,
+                                        plot_2d=True, plot_3d=True,
+                                        gaulert_method="classic",
+                                        multiprocessing=True)
+        
+# =============================================================================
+#         #Fine resolution, only around final value
+#         c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+#             BEM_calculator.find_c_p_max(tsr_lims = [7.2,7.7], tsr_step = .1, 
+#                                         theta_p_lims = [-.1, .9], theta_p_step = .1,
+#                                         plot_2d=True, plot_3d=True,
+#                                         gaulert_method="classic",
+#                                         multiprocessing=True)
+# =============================================================================
 
 #%% Task 2
-    
-    #Calculate V_rated and omega_max
-    V_rtd, omega_max, rpm_max = BEM_calculator.find_v_rtd(plot_graphs=True)
+    if Calc_sel ["T2"]:  
+        #Calculate V_rated and omega_max
+        V_rtd, omega_max, rpm_max = BEM_calculator.find_v_rtd(plot_graphs=True)
 
 #%% Task 3
-
-    df_theta_p, approx_func = BEM_calculator.find_pitch_above_rtd()
-
-    #Plot the results and compare to values from report
-    V_0 = np.arange (4,26)
-    theta_p_correct = np.array([2.751, 1.966, 0.896, 0, 0, 0, 0, 0, 4.4502, 
-                                7.266, 9.292, 10.958, 12.499, 13.896, 15.2, 
-                                16.432, 17.618, 18.758, 19.860, 20.927, 21.963, 
-                                22.975])
+    if Calc_sel ["T3"]:
+        df_theta_p, approx_func = BEM_calculator.find_pitch_above_rtd()
     
-    V_0_rated = np.floor(V_rtd)
-    i_rtd = np.where(V_0==V_0_rated)[0][0]
-
-    fig, ax = plt.subplots(figsize=(16, 10))
-    ax.scatter(V_0, theta_p_correct, label="correct values", marker = "+")
-    ax.plot(df_theta_p.V_0, df_theta_p.theta_p, 
-            c="k", ls="-", lw=1.5,
-            label="BEM calculation")
-    ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
-            c="k", ls="--", lw=1.5,
-            label="Approximation function")
-    ax.grid()
-    ax.set_xlabel(r"$V_0\:[m/s]$")
-    ax.set_ylabel(r"$\theta_p\:[^{\circ}]$")
-    ax.set_xticks(np.arange(v_in,v_out+1))
-    ax.set_yticks(np.arange(0,25))
-    plt.savefig("_03_export/theta_p.svg", bbox_inches = "tight")
-    plt.close(fig)
+        #Plot the results and compare to values from report
+        V_0 = np.arange (4,26)
+        theta_p_correct = np.array([2.751, 1.966, 0.896, 0, 0, 0, 0, 0, 4.4502, 
+                                    7.266, 9.292, 10.958, 12.499, 13.896, 15.2, 
+                                    16.432, 17.618, 18.758, 19.860, 20.927, 21.963, 
+                                    22.975])
+        
+        V_0_rated = np.floor(V_rtd)
+        i_rtd = np.where(V_0==V_0_rated)[0][0]
+        
+        fig, ax = plt.subplots()
+        ax.scatter(V_0, theta_p_correct, 
+                   label="DTU Wind Energy Report-I-0092", 
+                   marker = "+", c="k", zorder=2)
+        ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
+                c="k", ls="--", lw=1.5,
+                label="Approximation function", zorder=2)
+        V_0_ext = np.concatenate((np.arange(0,np.floor(BEM_calculator.V_rtd)+1), 
+                                df_theta_p.V_0.values))
+        ax.plot(V_0_ext, 
+                np.concatenate((np.full(len(V_0_ext)-len(df_theta_p), 
+                               df_theta_p.theta_p[0]), 
+                               df_theta_p.theta_p.values)), 
+                c="k", ls="-", lw=1.5, marker = "d", ms=6,
+                label="BEM calculation", zorder=2)
+        ax.grid(zorder=1)
+        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
+        ax.set_ylabel(r"$\theta_p\:\unit{[\degree]}$")
+        ax.set_xticks(np.arange(0,v_out+1))
+        ax.set_yticks(np.arange(0,25))
+        
+        ax.legend(loc="lower right")
+        
+        fname = "_03_export/theta_p_above_rated"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
+        
+        
+        
+        #Plot the full power curve
+        # BEM_calculator.insert_test_values()
+        V_0 = np.arange (0,27).astype(float)
+        V_0_ext = np.insert(V_0, 
+                            np.argwhere(V_0>=BEM_calculator.V_rtd)[0][0],
+                            BEM_calculator.V_rtd)
+        #Inserts points just before v_in and just after v_out
+        V_0_ext = np.insert(V_0_ext, 
+                            np.argwhere(V_0_ext>BEM_calculator.v_out).flatten()[0],
+                            BEM_calculator.v_out*1.001)
+        V_0_ext = np.insert(V_0_ext, 
+                            np.argwhere(V_0_ext<BEM_calculator.v_in).flatten()[-1]+1,
+                            BEM_calculator.v_in*0.999)
+        P, T, c_p, c_T = BEM_calculator.aero_power(V_in=V_0_ext,
+                                                   calc_thrust=True, 
+                                                   calc_exact=True)
+        
+        #Plot P
+        fig, ax = plt.subplots()
+        ax.axhline(BEM_calculator.P_rtd*1e-6, c="k", ls="--", lw=1.2, zorder=2)
+        ax.plot(V_0_ext, P*1e-6, 
+                c="k", ls="-", lw=1.5, zorder=3)
+        ax.text(0.2, BEM_calculator.P_rtd*1e-6*0.96, 
+                "$P_{rated}=" + f"{np.round(BEM_calculator.P_rtd*1e-6,2)}" + r"\:\unit{MW}$", 
+                color='k', va='center', ha='center', size = "medium",
+            transform=ax.get_yaxis_transform(), zorder=3)
+        
+        ax.grid(zorder=1)
+        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
+        ax.set_ylabel(r"$P\:\unit{[\MW]}$")
+        ax.set_xticks(np.arange(0,27+1))
+        
+        fname = "_03_export/Power_curve_full"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
+        
+        #Plot T
+        fig, ax = plt.subplots()
+        ax.plot(V_0_ext, T*1e-6, c="k", ls="-", lw=1.5, zorder=2)
+        
+        ax.grid(zorder=1)
+        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
+        ax.set_ylabel(r"$T\:\unit{[\MN]}$")
+        ax.set_xticks(np.arange(0,27+1))
+        
+        fname = "_03_export/Thrust_curve_full"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
+        
+        #Plot c_p & c_T
+        fig, ax1 = plt.subplots()
+        plt_c_p = ax1.plot(V_0_ext, c_p, 
+                           label = "$C_p$",
+                           c="k", ls="-", lw=1.5, zorder=2)
+        
+        ax1.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
+        ax1.set_ylabel(r"$C_p$")
+        ax1.set_xticks(np.arange(0,27+1))
+        ax1.set_yticks(np.arange(0,1.1,.1))
+        ax1.grid(zorder=1)
     
-    #Plot the full power curve
-    # BEM_calculator.insert_test_values()
-    V_0 = np.arange (4,26).astype(float)
-    V_0_ext = np.insert(V_0, 
-                        np.argwhere(V_0>=BEM_calculator.V_rtd)[0][0],
-                        BEM_calculator.V_rtd)
-    P_full = BEM_calculator.aero_power(V_in=V_0_ext, mode="exact")
-    
-    fig, ax = plt.subplots(figsize=(16, 10))
-    ax.plot(V_0_ext, P_full*1e-6, 
-            c="k", ls="-", lw=1.5,
-            label="BEM calculation")
-    ax.axhline(BEM_calculator.P_rtd*1e-6, c="k", ls="--", lw=1.2)
-    
-    ax.grid()
-    ax.set_xlabel(r"$V_0\:[m/s]$")
-    ax.set_ylabel(r"$P\:[MW]$")
-    ax.set_xticks(np.arange(v_in,v_out+1))
-    plt.savefig("_03_export/Power_curve_full.svg", bbox_inches = "tight")
-    plt.close(fig)
+        ax2 = ax1.twinx()
+        plt_c_T = ax2.plot(V_0_ext, c_T, 
+                           label = "$C_T$",
+                           c="k", ls="--", lw=1.5)
+        ax2.set_ylabel(r"$C_T$")
+        ax2.set_yticks(np.arange(0,1.1,.1))
+        
+        lns = plt_c_p+plt_c_T
+        labs = [l.get_label() for l in lns]
+        ax1.legend(lns, labs, loc="center right")
+        
+        fname = "_03_export/Coefficients_curve_full"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
 
 #%% Task 5
-    AEP, P, f_weibull = BEM_calculator.calc_AEP(A=9, k=1.9, 
-                                                v_out=-1, V_rtd=12,
-                                                c_p_max=.4989)
-    
-    BEM_calculator.plot_weibull()
+    if Calc_sel ["T5"]:
+        AEP, P, f_weibull = BEM_calculator.calc_AEP(A=9, k=1.9, 
+                                                    v_out=-1)
+        AEP_20, _ , _ = BEM_calculator.calc_AEP(A=9, k=1.9, 
+                                                    v_out=20)
+        
+        BEM_calculator.plot_weibull()
     
 #%% Task 6
-
-    task_six_gen = BEM_calculator.calc_task_six()
-    
-    c_max, theta_p_max6, phi_max = next(task_six_gen)
-    c_max, theta_p_max6, phi_max = next(task_six_gen)
-    phi_max = np.rad2deg(phi_max)
+    if Calc_sel ["T6"]:
+        task_six_gen = BEM_calculator.calc_task_six(plot_graphs = True)
+        
+        c_max, theta_p_max6, phi_max = next(task_six_gen)
+        c_max, theta_p_max6, phi_max = next(task_six_gen)
+        phi_max = np.rad2deg(phi_max)

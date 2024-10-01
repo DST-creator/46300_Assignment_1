@@ -326,6 +326,9 @@ class Utils_BEM():
                      xticks=np.array([]), yticks=np.array([]),
                      plt_type="contour", azim=45, elev=30,
                      labels=["x", "y", "z"], unit_z = "-",
+                     hline=None, hline_label="",
+                     vline=None, vline_label="",
+                     intersect_label="",
                      exp_fld = "_03_export", fname ="", 
                      return_obj=False):
         """Plot a variable Z over a meshgrid X & Y as a contour or surface plot.
@@ -353,7 +356,19 @@ class Utils_BEM():
                 plt_type 'surface')
             labels (array-like - optional):
                 Labels for the three axes - Must have length 3!
-            fname (str - optional):
+            hline (bool, int or float - optional):
+                Position for a hline to be plotted (if None is specified, no
+                hline is drawn)
+            hline_label (String - optional):
+                Labels for the hline
+            vline (bool, int or float - optional):
+                Position for a vline to be plotted (if None is specified, no
+                hline is drawn)
+            vline_label (String - optional):
+                Labels for the vline
+            intersect_label (String - optional):
+                Labels for the intersection point of the hline and vline
+            exp_fld (str - optional):
                 Folder in which to save the figure. Default: _03_export 
                 subfolder of current working directory
             fname (str - optional):
@@ -376,17 +391,90 @@ class Utils_BEM():
             label_z = labels[2]
         
         if plt_type == "surface":
-            fig = plt.figure(figsize=(10,10))
-            ax = plt.axes(projection='3d')
+            fig = plt.figure(figsize=(15,15))
+            ax = fig.add_subplot(111, projection='3d')
+            # ax = plt.axes(projection='3d')
             ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
                         cmap="plasma", edgecolor='none')
             ax.set_zlabel(label_z)
             ax.view_init(elev, azim)
+            
+            #Adjust padding
+            # fig.tight_layout(pad=5)
+            ax.set_box_aspect([1, 1, 1.15])
+            ax.zaxis.labelpad = 35 
+            ax.zaxis.set_tick_params(pad=15)  # Increase distance of z-ticks from axis
+            
         elif plt_type == "contour":
             fig,ax = plt.subplots(figsize=(16, 10))
-            contour = plt.contourf(X, Y, Z, 80, cmap='plasma')
+            contour = ax.contourf(X, Y, Z, 80, cmap='plasma')
             plt.colorbar(contour, 
-                         label=label_z)
+                         label=label_z,
+                         ax=ax)
+
+            width, height = self.get_ax_size(fig, ax)
+            xlims = ax.get_xlim()
+            ylims = ax.get_ylim()
+            
+            if type(hline) in [int, float, np.float16, np.float32, np.float64, 
+                               np.int16, np.int32, np.int64]: 
+                plt_hline = True
+            else:
+                plt_hline = False
+            if type(vline) in [int, float, np.float16, np.float32, np.float64, 
+                               np.int16, np.int32, np.int64]: 
+                plt_vline = True
+            else:
+                plt_vline = False
+            
+            if plt_hline:
+                ax.axhline(hline, c="k", ls="--", lw=1.2)
+                if hline_label:
+                    y_pos = self.calc_text_pos(ax_lims=ylims, ax_size=height, 
+                                               base_pos=hline, offset=20)
+                    if plt_vline:
+                        x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                                   base_pos=vline)
+                        ax.text(x_pos, y_pos,  hline_label, 
+                                color='k', va='bottom', ha='right', 
+                                size = "medium")
+                    else:
+                        ax.text(0.2, y_pos,  hline_label, 
+                                color='k', va='bottom', ha='center', 
+                                size = "medium", 
+                                transform=ax.get_yaxis_transform())
+                plt_hline = True
+            if plt_vline:
+                ax.axvline(vline, c="k", ls="--", lw=1.2)
+                if vline_label:
+                    x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                               base_pos=vline, offset=-20)
+                    if plt_hline:
+                        y_pos = self.calc_text_pos(ax_lims=ylims, 
+                                                   ax_size=height, 
+                                                   base_pos=hline)
+                        ax.text(x_pos, y_pos,  vline_label, 
+                                color='k', va='top', ha='right', 
+                                size = "medium", rotation="vertical")
+                    else:
+                        ax.text(x_pos, 0.2,  vline_label, 
+                                color='k', va='center', ha='right', 
+                                size = "medium", rotation="vertical",
+                                transform=ax.get_xaxis_transform())
+                    
+                
+                if plt_hline:
+                    ax.scatter(vline, hline, marker ="o", c = "k", s=50)
+                    
+                    if intersect_label:
+                        arrowstyle = dict(arrowstyle="->", 
+                                          connectionstyle="angle,angleA=0,angleB=60")
+                        ax.annotate(intersect_label, (vline,hline), (60, 40), 
+                                     xycoords='data', 
+                                     textcoords='offset points', 
+                                     ha='left', va='bottom', 
+                                     arrowprops = arrowstyle)
+                
         else:
             print(f"Unknown plot type {plt_type}")
             return
@@ -398,9 +486,11 @@ class Utils_BEM():
         if np.size(yticks)>1:
             ax.set_yticks(yticks)
         
-        if not fname: fname= f"{labels[2].replace('$','')}_{plt_type}.svg"
-        
-        fig.savefig(fname = Path(exp_fld, fname))
+        if not fname: fname= f"{labels[2].replace('$','')}_{plt_type}"
+
+        fig.savefig(fname = Path(exp_fld, fname + ".svg"))
+        fig.savefig(fname = Path(exp_fld, fname + ".pdf"), format="pdf")        # Save PDF for inclusion
+        fig.savefig(fname = Path(exp_fld, fname + ".pdf"))                      # Save PGF file for text inclusion in LaTeX
         
         if return_obj:
             return fig,ax
@@ -576,7 +666,66 @@ class Utils_BEM():
         labs = [l.get_label() for l in lns]
         ax1.legend(lns, labs, loc="center right")
         
-        plt.savefig(fname="./_03_export/Weibull_dist.svg",
-                    bbox_inches = "tight")
+        fname = "_03_export/Weibull_dist"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
         plt.close(fig)
     
+    @staticmethod
+    def available_power(V, rho, R):
+        return .5*rho*np.pi*(R**2)*np.power(V,3)
+    
+    @staticmethod
+    def get_ax_size(fig, ax):
+        """Calculates the axes size in pixels
+        
+        Parameters:
+            fig (matplotlibe figure):
+                Figure for which to calculate the axes size 
+            ax (matplotlibe axes):
+                Axes for which to calculate the axes size 
+                
+        Returns:
+            width (float):
+                Width of the figure in pixels
+            height (float):
+                height of the figure in pixels
+        """
+        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        width, height = bbox.width, bbox.height
+        width *= fig.dpi
+        height *= fig.dpi
+        return width, height
+    
+    @staticmethod
+    def calc_text_pos(ax_lims, ax_size, base_pos, offset=-80):
+        """Calculate the position of Text based on an offset in pixels.
+        
+        Parameters:
+            ax_lims (array-like):
+                Lower and upper limits of the axis
+            ax_size (float):
+                Size of the axis in pixels
+            base_pos (float):
+                Base position of the text in the unit of the axis ticks
+            offset (float):
+                Desired offset of the text from the base_pos in pixels
+        
+        Returns:
+            pos (float):
+                Adjusted position of the text in the unit of the axis ticks
+        """
+        
+        val_len = ax_lims[1]-ax_lims[0]
+        pixel_pos = (base_pos-ax_lims[0])/val_len*ax_size+offset
+        if pixel_pos <100:
+            offset = -offset*4
+            pixel_pos = (base_pos-ax_lims[0])/val_len*ax_size+offset
+        elif ax_size-pixel_pos <100:
+            offset = -offset*4
+            pixel_pos = (base_pos-ax_lims[0])/val_len*ax_size+offset
+        
+        return (pixel_pos)/ax_size*val_len+ ax_lims[0]
+        
+        
