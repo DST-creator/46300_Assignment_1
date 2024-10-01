@@ -1,5 +1,6 @@
 #%% Imports
 #General imports
+import re
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -491,7 +492,19 @@ class Utils_BEM():
         fig.savefig(fname = Path(exp_fld, fname + ".svg"))
         fig.savefig(fname = Path(exp_fld, fname + ".pdf"), format="pdf")        # Save PDF for inclusion
         fig.savefig(fname = Path(exp_fld, fname + ".pgf"))                      # Save PGF file for text inclusion in LaTeX
+        
+        #For contour plots, the .pgf file needs to be adjusted since the 
+        #colorbar is saved as a separate file and is referenced as a pathlink
+        #in the .pgf file. The link is therefore changed to the directory
+        #in the Overleaf project, where the figures are saved
+        if plt_type == "contour":
+            with open (Path(exp_fld, fname + ".pgf"), "r") as f:
+                file = f.read()
 
+            file = file.replace(fname, r"./04_figures/01_Plots/" + fname)
+
+            with open (Path(exp_fld, fname + ".pgf"), "w") as f:
+                f.write(file)
         
         if return_obj:
             return fig,ax

@@ -1655,10 +1655,10 @@ if __name__ == "__main__":
                            rho = rho)
     
     Calc_sel = dict(T1=True,
-                    T2=False, 
-                    T3=False, 
-                    T5=False, 
-                    T6=False)
+                    T2=True, 
+                    T3=True, 
+                    T5=True, 
+                    T6=True)
     
     
     #Plot operating range
