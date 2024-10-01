@@ -1598,6 +1598,7 @@ class BEM (Utils_BEM):
                                   vline=c_max, 
                                   vline_label=r"$c=" + str(c_max) 
                                               + r"\:\unit{\m}$",
+
                                   intersect_label=r"$C_{p,max}=" + 
                                                   str(round(max_item.item(),4)) 
                                                   + r"$")

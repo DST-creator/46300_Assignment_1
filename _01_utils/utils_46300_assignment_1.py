@@ -491,6 +491,7 @@ class Utils_BEM():
         fig.savefig(fname = Path(exp_fld, fname + ".svg"))
         fig.savefig(fname = Path(exp_fld, fname + ".pdf"), format="pdf")        # Save PDF for inclusion
         fig.savefig(fname = Path(exp_fld, fname + ".pgf"))                      # Save PGF file for text inclusion in LaTeX
+
         
         if return_obj:
             return fig,ax
