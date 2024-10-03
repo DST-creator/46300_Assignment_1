@@ -1,5 +1,6 @@
 #%% Module imports
 #General imports
+import os
 import scipy
 import numpy as np
 import pandas as pd
@@ -167,8 +168,7 @@ class BEM (Utils_BEM):
     def calc_ind_factors(self, r, tsr, theta_p = np.pi, 
                          a_0 = 0, a_p_0 = 0, dC_T_0 = 0, 
                          c=-1, tcr=-1, beta=-np.inf, sigma=-1,
-                         f=.1, gaulert_method = "classic",
-                         test_mode = False):
+                         f=.1, gaulert_method = "classic"):
         """Calulation of the induced velocity factors from the equations of the
         blade element momentum theory.
         The chord length c, thickness to chord ratio tcr, twist angle beta and
@@ -257,11 +257,7 @@ class BEM (Utils_BEM):
         
         aoa = phi-theta
         
-        if test_mode:
-            C_l = .5
-            C_d = .01
-        else:
-            C_l, C_d = self.interp_coeffs (aoa=np.rad2deg(aoa), tcr=tcr)
+        C_l, C_d = self.interp_coeffs (aoa=np.rad2deg(aoa), tcr=tcr)
         
         #calculate normal and tangential force factors
         C_n = C_l*np.cos(phi) + C_d*np.sin(phi)
@@ -318,8 +314,7 @@ class BEM (Utils_BEM):
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
                      a_0 = 0, a_p_0 = 0, dC_T_0 = 0,
                      c=-1, tcr = -1, beta = -np.inf, sigma = -1,
-                     epsilon=1e-6, f = .1, gaulert_method = "classic",
-                     test_mode = False):
+                     epsilon=1e-6, f = .1, gaulert_method = "classic"):
         """Iterative solver of the equations of blade element momentum theory 
         for the induced velocity factors.
         Note: If the values do not converge within 1000 iterations, the 
@@ -396,8 +391,7 @@ class BEM (Utils_BEM):
         a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0, 
                                           c=c, tcr = tcr, beta=beta, sigma=sigma,
-                                          gaulert_method=gaulert_method,
-                                          test_mode=test_mode)
+                                          gaulert_method=gaulert_method)
         n = 1
         
         while (abs(a-a_0)>epsilon) or (abs(a_p-a_p_0)>epsilon): 
@@ -432,37 +426,85 @@ class BEM (Utils_BEM):
                                                     beta=beta, 
                                                     sigma=sigma,
                                                     gaulert_method =
-                                                    gaulert_method,
-                                                    test_mode=test_mode)
+                                                    gaulert_method)
 
             n +=1
-            
-        
+                
 # =============================================================================
 #         if n<=500:
 #             print(f"Calculation stopped after {n} iteration")
 # =============================================================================
-        
-# =============================================================================
-#         #Print warning for invalid a values
-#         if a < 0:
-#             print((f"Warning: a=0 for tsr = {tsr}, "+
-#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
-#         if a > 1:
-#             print((f"Warning: a>=1 for tsr = {tsr}, "+
-#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
-#         elif a_p == -1:
-#             print((f"Warning: a>=1 for tsr = {tsr}, "+
-#                    f"theta_p = {np.rad2deg(theta_p)} deg, r = {r} m"))
-# =============================================================================
-        
+ 
         if r>=.999*self.R:
             a = np.array([1])
         
         conv_res = (abs(a-a_0), abs(a_p-a_p_0))
         
         return a, a_p, F, conv_res, n
+    
+    def integ_pT(self, tsr, theta_p, r_range,
+                             c=-1, tcr = -1, beta = -np.inf, sigma = -1,
+                             r_range_type = "values", 
+                             gaulert_method = "classic"):
+        #Prepare inputs
+        if r_range_type == "bounds":
+            r_range, _, _, _ = self.check_radius_range (r_range, self.R)
+        elif r_range_type == "values":
+            r_range = np.array(r_range)
+            if np.any(r_range>self.R) or np.any(r_range<0):
+                raise ValueError("All radii in r_range must be within [0,R]")
+        else:
+            raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
+                             " or 'values'")
+        
+        if type(c)== int and c == -1:
+            c = np.array([np.interp(r, self.bld_df.r, self.bld_df.c) 
+                          for r in r_range])
+        if type(tcr)== int and tcr == -1:
+            tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
+                            for r in r_range])
+        if type(beta) in [int, float] and beta == -np.inf:
+            beta = np.array([np.deg2rad(np.interp(r, 
+                                                  self.bld_df.r, 
+                                                  self.bld_df.beta)) 
+                             for r in r_range])
+        if type(sigma)== int and sigma == -1:
+            sigma = np.divide(c*self.B, 2*np.pi*np.array(r_range))
+        
+        #Calculat induction factors
+        a_arr = np.array(np.zeros(len(r_range)))
+        a_p_arr = np.array(np.zeros(len(r_range)))
+        F_arr = np.array(np.zeros(len(r_range)))
+        for i,r in enumerate(r_range):
+            a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
+                                                    tsr=tsr, 
+                                                    c=c[i], tcr=tcr[i], 
+                                                    beta=beta[i], 
+                                                    sigma=sigma[i],
+                                                    theta_p=theta_p,
+                                                    gaulert_method =
+                                                    gaulert_method)
 
+            a_arr[i] = a_i.item()
+            a_p_arr[i] = a_p_i.item()
+            F_arr[i] = F_i.item()
+        
+        V_0=10
+        p_N, p_T = self.calc_local_forces (r_range=r_range, 
+                                           tsr=tsr, 
+                                           V_0=V_0, 
+                                           theta_p=theta_p, 
+                                           a=a_arr, 
+                                           a_p=a_p_arr)
+        
+        omega = tsr*V_0/self.R
+        P_avail = .5*self.rho*np.pi*(self.R**2)*np.power(V_0,3)
+        c_p = self.B*scipy.integrate.trapezoid(p_T*r_range, r_range)*omega/P_avail
+        c_T = self.B*scipy.integrate.trapezoid(p_N, r_range)\
+                /.5*self.rho*np.pi*(self.R**2)*np.power(V_0,2)
+
+        return c_p, c_T, a_arr, a_p_arr, F_arr
+    
     def integ_dCp_numerical (self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
@@ -618,30 +660,11 @@ class BEM (Utils_BEM):
                                                 tsr=tsr, 
                                                 theta_p=theta_p,
                                                 gaulert_method = gaulert_method)
-        
-        
-# =============================================================================
-#         r = np.array(r)
-#         #For radii in the last 2% of the rotor radius, the BEM does not return
-#         #reliable results. This range is therefore neglected and manually set
-#         #to 0
-#         i_end = np.where(r>=.995*self.R)
-#         r_end = r[i_end]
-#         
-#         # Radii for which the calculation needs to be performed
-#         i_valid = np.where(r<.995*self.R)
-#         r = r[i_valid]
-#         if np.array(a).size>1: a = a[i_valid]
-#         if np.array(a_p).size>1: a_p = a_p[i_valid]
-#         if np.array(tsr).size>1: tsr = tsr[i_valid]
-# =============================================================================
+
         
         #Calculate dc_p and append 0 for all points in the last 2 % of the 
         #rotor radius
         dc_p = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
-# =============================================================================
-#         dc_p = np.append (dc_p, np.zeros(r_end.shape))
-# =============================================================================
         
         return dc_p
     
@@ -686,7 +709,7 @@ class BEM (Utils_BEM):
 # =============================================================================
         
         return dc_T
-          
+     
     def integ_dcT (self, r, a, F):
         """Integrates the function for dC_T over r for given values of the 
         radius, the axial induction factor a and the Prandtl correction 
@@ -737,6 +760,16 @@ class BEM (Utils_BEM):
                                         c=c_global, tcr=tcr_global, 
                                         beta=beta_global, sigma=sigma_global,
                                         gaulert_method = gaulert_method_global)
+    
+    def integ_cp_worker_pT (self, tsr, theta_p):
+        global r_range_global, c_global, tcr_global, beta_global, \
+            sigma_global, gaulert_method_global
+        return self.integ_pT(tsr=tsr, theta_p=theta_p, 
+                             r_range=r_range_global,  
+                             r_range_type = "values",
+                             c=c_global, tcr=tcr_global, 
+                             beta=beta_global, sigma=sigma_global,
+                             gaulert_method = gaulert_method_global)
     
     def calc_cp (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
@@ -1018,7 +1051,7 @@ class BEM (Utils_BEM):
                               beta_shared, sigma_shared, 
                               gaulert_method_shared),
                     max_workers=6) as executor:
-                integrator_num = list(executor.map(self.integ_cp_worker,
+                integrator_num = list(executor.map(self.integ_cp_worker_pT,
                                             tsr_comb,
                                             np.deg2rad(theta_p_comb),
                                             chunksize=csize))
@@ -1042,29 +1075,13 @@ class BEM (Utils_BEM):
                                          tsr=tsr_comb[i],
                                          theta_p=theta_p_comb[i])
                                     ] = integrator_num[i][4]
-                    
-                    a = integrator_num[i][2] 
-                    a_p = integrator_num[i][3] 
-                    
-                    p_N, p_T = self.calc_local_forces (r_range=r_range, 
-                                                       tsr=tsr_comb[i], 
-                                                       V_0=10, 
-                                                       theta_p=theta_p_comb[i], 
-                                                       a=a, 
-                                                       a_p=a_p)
-                    P_avail = self.available_power(V=10, R=self.R, rho=1.225)
-                    c_p_i = B*scipy.integrate.trapezoid(p_T*r_range, r_range)/P_avail
-                    ds_c["c_p"].loc[dict(tsr=tsr_comb[i],
-                                           theta_p=theta_p_comb[i])
-                                      ] = c_p_i
-                    
-                    
+         
         else:
             #No Multiprocessing, just Iterating
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
                     
-                    cp_num, cT_num, a, a_p, F = self.integ_dCp_numerical (
+                    cp_num, cT_num, a, a_p, F = self.integ_pT (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
                         c=c, tcr=tcr, beta=beta, sigma=sigma,
                         r_range_type="values", gaulert_method=gaulert_method)
@@ -1077,17 +1094,6 @@ class BEM (Utils_BEM):
                     ds_c["c_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
                     ds_c["c_T"].loc[dict(tsr=tsr,theta_p=theta_p)] = cT_num
                     
-                    p_N, p_T = self.calc_local_forces (r_range=r_range, 
-                                                       tsr=tsr, 
-                                                       V_0=8, 
-                                                       theta_p=theta_p, 
-                                                       a=a, 
-                                                       a_p=a_p)
-                    P_avail = self.available_power(V=8, R=self.R, rho=1.225)
-                    c_p_i = self.B*scipy.integrate.trapezoid(p_T*r_range, r_range)/P_avail
-                    ds_c["c_p"].loc[dict(tsr=tsr,
-                                         theta_p=theta_p)
-                                      ] = c_p_i
                     
 # =============================================================================
 #                     fig, ax = plt.subplots()
@@ -1167,7 +1173,7 @@ class BEM (Utils_BEM):
                           theta_p_step)
         
         start = perf_counter()
-        ds_cp, ds_bem = self.calc_cp (tsr_range=tsr, 
+        ds_cp, ds_bem = self.calc_cp_with_pT (tsr_range=tsr, 
                                       theta_p_range=theta_p,
                                       r_range=r_range,
                                       r_range_type = "values",
@@ -1442,7 +1448,7 @@ class BEM (Utils_BEM):
         theta_p_radius = 3
         dtheta_p = .5
         
-        theta_p_radius_lst = [3, .4]
+        theta_p_radius_lst = [4, .4]
         dtheta_p_lst = [.5, .1]
         
         start = perf_counter()
@@ -1528,7 +1534,7 @@ class BEM (Utils_BEM):
           
         return self.df_theta_p, theta_p_approx_func
     
-    def calc_local_forces (self, r_range, tsr, V_0, theta_p, a, a_p):
+    def calc_local_forces (self, r_range, tsr, V_0, theta_p, a=-1, a_p=-1):
         """Calculates the local forces for given turbine parameters.
         All turbine parameters, which are not part of the inputs, are read from
         the class attributes.
@@ -1547,7 +1553,7 @@ class BEM (Utils_BEM):
                 If -1 is used for this parameter, then the axial and tangential
                 induction factors are calculated from the BEM method
             theta_p (scalar numerical value or array-like):
-                Pitch angle of the blades (in deg)
+                Pitch angle of the blades [rad]
             
         Returns:
             p_N (np.float or np.ndarray): 
@@ -1555,6 +1561,7 @@ class BEM (Utils_BEM):
             p_T (np.float or np.ndarray): 
                 Local tangential force in N/m
         """
+        
         p_N = np.zeros (len(r_range))
         p_T = np.zeros (len(r_range))
         
@@ -1568,7 +1575,7 @@ class BEM (Utils_BEM):
             
             c = np.interp(r, self.bld_df.r, self.bld_df.c)
             tcr = np.interp(r, self.bld_df.r, self.bld_df.tcr)
-            beta = np.interp(r, self.bld_df.r, self.bld_df.beta)
+            beta = np.deg2rad(np.interp(r, self.bld_df.r, self.bld_df.beta))
             
             #Calculate the angle of attack
             phi = np.arctan((np.divide(1-a[i],
@@ -1576,7 +1583,7 @@ class BEM (Utils_BEM):
                              * self.R/r).astype(float))
             theta = theta_p + beta
             
-            aoa = np.rad2deg(phi)-theta
+            aoa = phi-theta
             
             #Calculate relative velocity
             V_rel = np.sqrt((np.power(V_0*(1-a[i]),2) 
@@ -1584,7 +1591,7 @@ class BEM (Utils_BEM):
                             )
             
             #Calc lift and drag coefficients
-            C_l, C_d = self.interp_coeffs (aoa=aoa, tcr=tcr)
+            C_l, C_d = self.interp_coeffs (aoa=np.rad2deg(aoa), tcr=tcr)
             
             #Calculate local lift and drag
             l = .5*self.rho*np.power(V_rel, 2)*c*C_l[0]
@@ -1804,7 +1811,93 @@ class BEM (Utils_BEM):
         
         return AEP, P, f_weibull
 
-      
+    
+    def plot_local_forces(self, V_0, ashes_file="", plot_graphs = False):
+        #Check inputs
+        if not hasattr(self, 'V_rtd'): #I.e. if pitch angles
+            print("Calculating V_rtd")
+            V_rtd, omega_max, _  = BEM_solver.find_v_rtd()
+        else:
+            V_rtd = self.V_rtd
+            omega_max = self.omega_max
+        
+        #Determine inputs based on wind velocity
+        if V_0 > V_rtd:
+            if not hasattr(self, 'df_theta_p'): #I.e. if pitch angles
+                print("Calculating Pitch angles above rated")
+                df_theta_p, _  = BEM_solver.find_pitch_above_rtd()
+            else:
+                df_theta_p = self.df_theta_p
+                
+            tsr = self.omega_max*self.R/V_0
+            theta_p = np.interp(V_0, 
+                                df_theta_p["V_0"], 
+                                df_theta_p["theta_p"])
+            r_range = self.bld_df.r
+        else:
+            tsr = self.tsr_max
+            omega = self.tsr_max*V_0/self.R
+            theta_p = self.theta_p_max
+        
+        #Calculat induction factors
+        a = np.array(np.zeros(len(r_range)))
+        a_p = np.array(np.zeros(len(r_range)))
+        for i,r in enumerate(r_range):
+            a_i, a_p_i, _, _, _ = self.converge_BEM(r=r, 
+                                                    tsr=tsr,
+                                                    theta_p=theta_p)
+            a[i] = a_i.item()
+            a_p[i] = a_p_i.item()#
+        
+        #Calculate local forces
+        p_T, p_N = self.calc_local_forces (r_range=r_range, 
+                                           tsr=tsr, 
+                                           V_0=V_0, 
+                                           theta_p=np.deg2rad(theta_p), 
+                                           a=a, a_p=a_p)
+
+        if os.path.exits(ashes_file):
+            plt_ash = True
+            #Ashes results:
+            r_ash, p_T_ash, p_N_ash = BEM_solver.read_ashes("../01_ashes/00_V_5/Sensor Rotor.txt")
+        else:
+            plt_ash = False
+        
+        if plot_graphs:
+            #Plot p_T
+            fig, ax = plt.subplots()
+            ax.plot(r_range, p_T, c="k", ls="-", lw=1.5, zorder=2)
+            if plt_ash:
+                ax.plot(r_ash, p_T_ash, c="k", ls="--", lw=1.5, zorder=2)
+            
+            
+            ax.grid(zorder=1)
+            ax.set_xlabel(r"$r\:\unit{[\m]}$")
+            ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
+            
+            fname = f"_03_export/p_T_V{V_0}"
+            fig.savefig(fname+".svg")
+            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+            plt.close(fig)
+            
+            
+            #Plot p_N
+            fig, ax = plt.subplots()
+            ax.plot(r_range, p_N, c="k", ls="-", lw=1.5, zorder=2)
+            if plt_ash:
+                ax.plot(r_ash, p_N_ash, c="k", ls="--", lw=1.5, zorder=2)
+            
+            ax.grid(zorder=1)
+            ax.set_xlabel(r"$r\:\unit{[\m]}$")
+            ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
+            
+            fname = f"_03_export/p_N_V{V_0}"
+            fig.savefig(fname+".svg")
+            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+            plt.close(fig)
+    
     def calc_task_six (self, r=80.14, tsr = 8, 
                        c_bounds = [0,3], dc=.5,
                        theta_p_bounds = [-20, 20], dtheta_p=2,
@@ -1924,32 +2017,6 @@ if __name__ == "__main__":
     v_out = 25
     rho = 1.225
 
-#%% Test for Exercise values    
-    if False:
-        R=31
-        tsr = 2.61*R/8
-        P_rtd = 1
-        
-        BEM_solver =  BEM (R = R,
-                               B = B,
-                               P_rtd = P_rtd,
-                               v_in = v_in,
-                               v_out = v_out,
-                               rho = rho)
-        
-    
-        a, a_p, F, conv_res, n = BEM_solver.converge_BEM(r=24.5, 
-                                                tsr=tsr, 
-                                                theta_p = np.deg2rad(-3), 
-                                                a_0 = 0, 
-                                                a_p_0 = 0, 
-                                                epsilon=1e-6, 
-                                                f = .1, 
-                                                tcr = 100,    
-                                                c=1.5,
-                                                beta = np.deg2rad(2),
-                                                gaulert_method = "classic",
-                                                test_mode = True)
     
 #%% Initialization for Assignment 1    
     R = 89.17
@@ -1968,7 +2035,7 @@ if __name__ == "__main__":
                     T4=True, 
                     T5=False, 
                     T6=False)
-    task_1_precision = "fine, small"
+    task_1_precision = "medium, full"
     
     #Plot operating range
     # BEM_solver.test_neg_a(r=41, a_0=.3, a_p_0=0)
@@ -2148,7 +2215,7 @@ if __name__ == "__main__":
         print (f"Task 3 took {np.round(end-start,2)} s")
 
 #%% Task 4
-    # BEM_solver.insert_test_values()
+    BEM_solver.insert_test_values()
     
     if Calc_sel ["T4"]:
         start = perf_counter()
@@ -2166,20 +2233,7 @@ if __name__ == "__main__":
         omega_t4 = np.append(BEM_solver.tsr_max*V_0_t4[:-1]/R, 
                              BEM_solver.omega_max)
         r_range = BEM_solver.bld_df.r
-        
-##########################################
-        # rpm_20 = 9.6
-        # omega_20 = rpm_20 /60 * (2*np.pi)
-        # tsr_20 = omega_20*R/20
-        # tsr_t4[-1] = 4.48197
-        # theta_p_t4[-1]=17.618
-        # omega_t4[-1]=omega_20
-############################################
-############################################    
-        V_0_t4[2]=10    
-        omega_t4[2]=BEM_solver.tsr_max*V_0_t4[:-1]/R
-        theta_p_t4[0] = 0
-############################################       
+             
         #Prepare output arrays
         c_p_t4 = np.zeros(2)
         c_T_t4 = np.zeros(2)
@@ -2244,11 +2298,7 @@ if __name__ == "__main__":
                     ash_V20["Torque (aero)"].iloc[-1]]
         
         fig, ax = plt.subplots()
-        pt_hansen = np.array([-0.0406, -0.1153, 0.0594, 0.6325, 0.749, 0.7494, 0.7477, 
-                     0.7423, 0.7342, 0.7227, 0.6971, 0.6829, 0.665, 0.6153,
-                     0.5414, 0.4314, 0.2472,0])
         ax.plot(r_range, p_T_t4[2,:], c="k", ls="-", lw=1.5, zorder=2)
-        ax.plot(r_range, pt_hansen*1e3, c="k", ls="--", lw=1.5, zorder=2)
         
         ax.grid(zorder=1)
         ax.set_xlabel(r"$r\:\unit{[\m]}$")
@@ -2297,3 +2347,8 @@ if __name__ == "__main__":
         phi_max_t6 = np.rad2deg(phi_max_t6)
         end = perf_counter()
         print (f"Task 6 took {np.round(end-start,2)} s")
+
+#%% Testing
+    c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_pT(tsr=5.5, 
+                                                          theta_p=np.deg2rad(-4), 
+                                                          r_range=BEM_solver.bld_df.r)
