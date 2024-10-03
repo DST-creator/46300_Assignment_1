@@ -687,7 +687,7 @@ class Utils_BEM():
         plt.close(fig)
     
     @staticmethod
-    def available_power(V, rho, R):
+    def available_power(V, R, rho=1.225):
         return .5*rho*np.pi*(R**2)*np.power(V,3)
     
     @staticmethod
@@ -741,5 +741,114 @@ class Utils_BEM():
             pixel_pos = (base_pos-ax_lims[0])/val_len*ax_size+offset
         
         return (pixel_pos)/ax_size*val_len+ ax_lims[0]
+    
+    @staticmethod    
+    def read_ashes (file_path):
+        """Read the simulation results from a .txt file exported from Ashes.
+        Finds the respective contents in the text file based on Regex 
+        expressions.
         
+        Parameters:
+            file_path (str or path-like):
+                File path of the simulation results .txt file
+        Returns:
+            data_df (pandas dataframe):
+                Dataframe with the simulation timeseries
+            unit_dict (dict):
+                Dictionary with the units for each sensor  
+        """
+        if not os.path.exists(file_path): 
+            raise OSError("Input file not found")
         
+        with open(file_path, "r") as f:
+            res_file = f.read()
+
+        #Get column names
+        # Regex pattern: Search for "Column" followed by a line of numbers and tabs,
+        # followed by any a line with arbitrary characters, followed by one or more
+        # hyphens followed by a tab.
+        match = re.search(r"(?:Column\s*\n(?:\d+\t)+\n)(.+)(?:\n-+\t)+?", res_file) 
+        if not match:
+            raise ValueError("Headers not found in input file")
+        
+        headers = match.group(1).split("\t")
+        unit_dict = {re.sub(r"\s+\[.*\]", "", s) 
+                     : re.search(r"(?:\s+\[)(.*)(?:\])", s).group(1) 
+                     for s in headers}
+        headers = list(unit_dict.keys())
+
+        #Extract values
+        #Regex pattern: Search for arbitrary characters (including newline), followed 
+        # by a line of hyphens (both greedy quantifiers as non-capturing groups)
+        # followed by arbitrary characters (including newline) follwed by a final newline
+        match = re.search(r"(?:[\s\S]+)(?:\n(?:-*\t-+)+\n)([\s\S]+)(?:\n+)", 
+                          res_file)
+        if not match:
+            raise ValueError("No timeseries data found in the input file")
+        
+        data_str = match.group(1).split("\n")
+
+        data = np.zeros((len(data_str), len(headers)))
+        for i, line in enumerate(data_str):
+            try: 
+                data[i,:] = np.array(data_str[i].split("\t")).astype(float)
+            except Exception as e:
+                print(data_str[i])
+                
+        data_df = pd.DataFrame(columns = headers, data=data)  
+        
+        #Unit conversion:
+        units = list(unit_dict.values())
+        try: i = units.index("k W")
+        except: pass
+        else: data_df[headers[i]] = data_df[headers[i]] * 1e-3
+        
+        return data_df, unit_dict
+    
+    @staticmethod   
+    def read_ashes_quick(file_path):
+        """Read the simulation results from a .txt file exported from Ashes.
+        Finds the respective contents in the text file based on keywords and
+        assumed number of lines between the header and the timeseries data.
+        Note: this approach is less robust than the function "read_ashes", 
+        yet slightly quicker for very large files.
+        
+        Parameters:
+            file_path (str or path-like):
+                File path of the simulation results .txt file
+        Returns:
+            data_df (pandas dataframe):
+                Dataframe with the simulation timeseries
+            unit_dict (dict):
+                Dictionary with the units for each sensor  
+        """
+        
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        # Find the row with column headers (sensor names)
+        for i, line in enumerate(lines):
+            if line.startswith('Time'):
+                header_index = i
+                break
+
+        # Extract column headers (sensor names without units)
+        headers = lines[header_index].strip().split('\t')
+        unit_dict = {re.sub(r"\s+\[.*\]", "", s).strip() 
+                     : re.search(r"(?:\s+\[)(.*)(?:\])", s).group(1) 
+                     for s in headers}
+        headers = unit_dict.keys()
+        
+        # Skip until the line that begins with the first data entry
+        data_start_index = header_index + 7
+        
+        # Extract time series data
+        data = np.zeros((len(lines)-data_start_index, len(headers)))
+        for i, line in enumerate(lines[data_start_index:]):
+            if line.strip():  # Skip empty lines
+                data [i,:] = [float(value) for value in line.strip().split('\t')]
+
+        # Create DataFrame
+        data_df = pd.DataFrame(data, columns=headers)
+        
+        return data_df, unit_dict
