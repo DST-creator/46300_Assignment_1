@@ -1684,7 +1684,7 @@ if __name__ == "__main__":
                     T4=True, 
                     T5=True, 
                     T6=True)
-    task_1_precision = "fine, small"
+    task_1_precision = "fine, full"
     
     #Plot operating range
     # BEM_solver.test_neg_a(r=41, a_0=.3, a_p_0=0)
