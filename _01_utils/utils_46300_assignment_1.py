@@ -743,7 +743,7 @@ class Utils_BEM():
         return (pixel_pos)/ax_size*val_len+ ax_lims[0]
     
     @staticmethod    
-    def read_ashes (file_path):
+    def parse_read_ashes (file_path):
         """Read the simulation results from a .txt file exported from Ashes.
         Finds the respective contents in the text file based on Regex 
         expressions.
@@ -806,7 +806,7 @@ class Utils_BEM():
         return data_df, unit_dict
     
     @staticmethod   
-    def read_ashes_quick(file_path):
+    def parse_ashes_quick(file_path):
         """Read the simulation results from a .txt file exported from Ashes.
         Finds the respective contents in the text file based on keywords and
         assumed number of lines between the header and the timeseries data.
@@ -852,3 +852,67 @@ class Utils_BEM():
         data_df = pd.DataFrame(data, columns=headers)
         
         return data_df, unit_dict
+    
+    @staticmethod
+    def parse_ashes_blade (file_path):
+        if not os.path.exists(file_path): 
+            raise OSError("Input file not found")
+        
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        #Find the row with column headers (sensor names)
+        for i, line in enumerate(lines):
+            if line.startswith('Time'):
+                header_index = i
+                break
+
+        #Extract column headers (sensor names without units)
+        raw_headers = lines[header_index].strip().split('\t')
+        unit_dict = {re.sub(r"\s+\[.*\]", "", s).strip() 
+                     : re.search(r"(?:\s+\[)(.*)(?:\])", s).group(1) 
+                     for s in raw_headers}
+        headers = [re.sub(r"\s+\[.*\]", "", s).strip() for s in raw_headers[1:]]
+        
+        #Find the row with the blade section coordinates
+        for i, line in enumerate(lines[header_index+1:]):
+            if 'Blade span' in line:
+                section_index = i + header_index + 2
+                break
+        
+        #Extract blade section coordinates
+        r = np.array(lines[section_index].strip().split(' ')).astype(float)
+        
+        # Skip until the line that begins with the first data entry
+        data_start_index = section_index + 2
+        
+        # Extract time series data
+        appr_n_timesteps = len(lines[section_index+1:])
+        data = np.zeros((appr_n_timesteps, len(headers), len(r)))
+        times = np.zeros(appr_n_timesteps)
+        i = 0
+        for line in lines[section_index+1:]:
+            if line.strip():  # Skip empty lines
+               sensor_lines =  line.strip().split('\t\t')
+               t, sensor_lines[0] = sensor_lines[0].split("\t")
+               
+               times[i] = t
+
+               for j, sline in enumerate(sensor_lines):
+                   data[i, j, :] = np.array(sline.strip().split(' ')).astype(float)
+               i+=1
+            else:
+               data = np.delete(data, i, axis = 0)
+               times = np.delete(times, i)
+        
+        data_ds = xr.Dataset(
+            {},
+            coords={"t":times,
+                    "r":r}
+            )
+        
+        for i, header in enumerate(headers):
+            data_ds[header] = (list(data_ds.coords.keys()),
+                              data[:,i,:])
+            
+        return data_ds, times, unit_dict

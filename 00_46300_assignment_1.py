@@ -771,7 +771,7 @@ class BEM (Utils_BEM):
                              beta=beta_global, sigma=sigma_global,
                              gaulert_method = gaulert_method_global)
     
-    def calc_cp (self, tsr_range, theta_p_range, 
+    def calc_cp_dCp (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
                       gaulert_method = "classic",
                       multiprocessing = True):
@@ -933,7 +933,7 @@ class BEM (Utils_BEM):
         
         return ds_c, ds_bem
     
-    def calc_cp_with_pT (self, tsr_range, theta_p_range, 
+    def calc_cp_pT (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
                       gaulert_method = "classic",
                       multiprocessing = True):
@@ -1113,7 +1113,8 @@ class BEM (Utils_BEM):
 
     def find_c_p_max (self, tsr_lims = [5,10], tsr_step = .5, 
                       theta_p_lims = [-3, 4], theta_p_step = .5,
-                      gaulert_method="classic", multiprocessing=True,
+                      gaulert_method="classic", integ_method = "dC_p",
+                      multiprocessing=True,
                       plot_2d = True, plot_3d = True):
         """Find the approximate tip speed ratio and pitch angle combination 
         within a specified range which results in a local maximum of the power 
@@ -1166,6 +1167,10 @@ class BEM (Utils_BEM):
                 coefficient as well as the Prandtl correction factor for all 
                 combinations of the tip speed and pitch angle range
         """
+        #Check inputs
+        if integ_method not in ["dC_p", "p_T"]:
+            raise ValueError("Integration method must be 'dC_p' or 'p_T', not"
+                             + f" {integ_method}")
         
         r_range = self.bld_df.r
         tsr = np.arange(tsr_lims[0], tsr_lims[1] + tsr_step, tsr_step)
@@ -1173,12 +1178,20 @@ class BEM (Utils_BEM):
                           theta_p_step)
         
         start = perf_counter()
-        ds_cp, ds_bem = self.calc_cp_with_pT (tsr_range=tsr, 
-                                      theta_p_range=theta_p,
-                                      r_range=r_range,
-                                      r_range_type = "values",
-                                      gaulert_method=gaulert_method,
-                                      multiprocessing=multiprocessing)
+        if integ_method=="dC_p":
+            ds_cp, ds_bem = self.calc_cp_dCp (tsr_range=tsr, 
+                                          theta_p_range=theta_p,
+                                          r_range=r_range,
+                                          r_range_type = "values",
+                                          gaulert_method=gaulert_method,
+                                          multiprocessing=multiprocessing)
+        else:
+            ds_cp, ds_bem = self.calc_cp_pT (tsr_range=tsr, 
+                                          theta_p_range=theta_p,
+                                          r_range=r_range,
+                                          r_range_type = "values",
+                                          gaulert_method=gaulert_method,
+                                          multiprocessing=multiprocessing)
         end = perf_counter()
         print (f"C_p_max calculation took {np.round(end-start,2)} s")
         
@@ -1833,33 +1846,33 @@ class BEM (Utils_BEM):
             theta_p = np.interp(V_0, 
                                 df_theta_p["V_0"], 
                                 df_theta_p["theta_p"])
-            r_range = self.bld_df.r
         else:
             tsr = self.tsr_max
             omega = self.tsr_max*V_0/self.R
-            theta_p = self.theta_p_max
+            theta_p = self.theta_p_max 
         
         #Calculat induction factors
+        r_range = self.bld_df.r
         a = np.array(np.zeros(len(r_range)))
         a_p = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
             a_i, a_p_i, _, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr,
-                                                    theta_p=theta_p)
+                                                    theta_p=np.deg2rad(theta_p))
             a[i] = a_i.item()
             a_p[i] = a_p_i.item()#
         
         #Calculate local forces
-        p_T, p_N = self.calc_local_forces (r_range=r_range, 
+        p_N, p_T = self.calc_local_forces (r_range=r_range, 
                                            tsr=tsr, 
                                            V_0=V_0, 
                                            theta_p=np.deg2rad(theta_p), 
                                            a=a, a_p=a_p)
 
-        if os.path.exits(ashes_file):
+        if os.path.exists(ashes_file): 
             plt_ash = True
             #Ashes results:
-            r_ash, p_T_ash, p_N_ash = BEM_solver.read_ashes("../01_ashes/00_V_5/Sensor Rotor.txt")
+            data_ds, times, _ = self.parse_ashes_blade (ashes_file)
         else:
             plt_ash = False
         
@@ -1868,12 +1881,16 @@ class BEM (Utils_BEM):
             fig, ax = plt.subplots()
             ax.plot(r_range, p_T, c="k", ls="-", lw=1.5, zorder=2)
             if plt_ash:
-                ax.plot(r_ash, p_T_ash, c="k", ls="--", lw=1.5, zorder=2)
+                ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
+                        data_ds["Torque force, distr."
+                                ].sel(t=times[-1]).values, 
+                        c="k", ls="--", lw=1.5, zorder=2)
             
             
             ax.grid(zorder=1)
             ax.set_xlabel(r"$r\:\unit{[\m]}$")
             ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
+            ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
             
             fname = f"_03_export/p_T_V{V_0}"
             fig.savefig(fname+".svg")
@@ -1886,11 +1903,15 @@ class BEM (Utils_BEM):
             fig, ax = plt.subplots()
             ax.plot(r_range, p_N, c="k", ls="-", lw=1.5, zorder=2)
             if plt_ash:
-                ax.plot(r_ash, p_N_ash, c="k", ls="--", lw=1.5, zorder=2)
+                ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
+                        data_ds["Thrust force, distr."
+                                ].sel(t=times[-1]).values, 
+                        c="k", ls="--", lw=1.5, zorder=2)
             
             ax.grid(zorder=1)
             ax.set_xlabel(r"$r\:\unit{[\m]}$")
             ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
+            ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
             
             fname = f"_03_export/p_N_V{V_0}"
             fig.savefig(fname+".svg")
@@ -2035,7 +2056,13 @@ if __name__ == "__main__":
                     T4=True, 
                     T5=False, 
                     T6=False)
-    task_1_precision = "medium, full"
+    t1_inputs = dict(precision="fine, small",
+                     plot_2d = True,
+                     plot_3d=True,
+                     multiproc=True,
+                     gaulert="classic",
+                     integ_mtd = "dC_p")
+    
     
     #Plot operating range
     # BEM_solver.test_neg_a(r=41, a_0=.3, a_p_0=0)
@@ -2044,32 +2071,39 @@ if __name__ == "__main__":
     #Calculate C_p values
     if Calc_sel ["T1"]:
         start = perf_counter()
-        if task_1_precision == "medium, full":
+        if t1_inputs["precision"] == "medium, full":
             #Medium resolution, full search area
             
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-                BEM_solver.find_c_p_max(plot_2d=True, plot_3d=True,
-                                            gaulert_method="classic",
-                                            multiprocessing=True)
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method=t1_inputs["gaulert"],
+                                        integ_method=t1_inputs["integ_mtd"],
+                                        multiprocessing=t1_inputs["multiproc"])
                 
-        elif task_1_precision == "fine, full":
+        elif t1_inputs["precision"] == "fine, full":
             #Fine resolution, full search area
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
                 BEM_solver.find_c_p_max(tsr_step = .1, 
-                                            theta_p_step = .1,
-                                            plot_2d=True, plot_3d=True,
-                                            gaulert_method="classic",
-                                            multiprocessing=True)
+                                        theta_p_step = .1,
+                                        plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method=t1_inputs["gaulert"],
+                                        integ_method=t1_inputs["integ_mtd"],
+                                        multiprocessing=t1_inputs["multiproc"])
                 
         else:    
             #Fine resolution, only around final value
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-                BEM_solver.find_c_p_max(tsr_lims = [7.2,7.7], tsr_step = .1, 
-                                            theta_p_lims = [-.4, .7], 
-                                            theta_p_step = .1,
-                                            plot_2d=True, plot_3d=True,
-                                            gaulert_method="classic",
-                                            multiprocessing=True)
+                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.1], 
+                                        tsr_step = .1, 
+                                        theta_p_lims = [-.5, .2], 
+                                        theta_p_step = .1,
+                                        plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method=t1_inputs["gaulert"],
+                                        integ_method=t1_inputs["integ_mtd"],
+                                        multiprocessing=t1_inputs["multiproc"])
         end = perf_counter()
         print (f"Task 1 took {np.round(end-start,2)} s")
 
@@ -2215,111 +2249,23 @@ if __name__ == "__main__":
         print (f"Task 3 took {np.round(end-start,2)} s")
 
 #%% Task 4
-    BEM_solver.insert_test_values()
+    # BEM_solver.insert_test_values()
     
     if Calc_sel ["T4"]:
         start = perf_counter()
-        if not hasattr(BEM_solver, 'df_theta_p'): #I.e. if V_rated has not been calculated yet
-            print("Calculating V_rtd")
-            df_theta_p, _  = BEM_solver.find_pitch_above_rtd()
-        else:
-            df_theta_p = BEM_solver.df_theta_p
-        
-        #Prepare inputs
-        V_0_t4 = np.array([5, 9, 11, 20])
-        tsr_t4 = np.array([BEM_solver.tsr_max, BEM_solver.omega_max*R/20])
-        theta_p_t4 = np.insert(df_theta_p[df_theta_p.V_0 == 20].theta_p.values, 
-                               0, BEM_solver.theta_p_max)
-        omega_t4 = np.append(BEM_solver.tsr_max*V_0_t4[:-1]/R, 
-                             BEM_solver.omega_max)
-        r_range = BEM_solver.bld_df.r
-             
-        #Prepare output arrays
-        c_p_t4 = np.zeros(2)
-        c_T_t4 = np.zeros(2)
-        a_t4 = np.zeros((2,len(r_range)))
-        a_p_t4 = np.zeros((2,len(r_range)))
-        F_t4 = np.zeros(2)
-        
-        for i, (tsr_i, theta_p_i) in enumerate(zip(tsr_t4, theta_p_t4)):
-            c_p_t4[i], c_T_t4[i], a_t4[i,:], a_p_t4[i,:],_ =  BEM_solver.integ_dCp_numerical (
-                tsr = tsr_i, theta_p=np.deg2rad(theta_p_i), 
-                r_range = r_range)
-        del i, tsr_i, theta_p_i
-        
-        tsr_t4 = np.insert(tsr_t4, 1, [tsr_t4[0]]*2)
-        theta_p_t4 = np.insert(theta_p_t4, 1, [theta_p_t4[0]]*2)
-        
-        c_p_t4 = np.insert(c_p_t4, 1, [c_p_t4[0]]*2)
-        c_T_t4 = np.insert(c_T_t4, 1, [c_T_t4[0]]*2)
-        a_t4 = np.concatenate((a_t4[0,:].reshape(1,-1), 
-                               a_t4[0,:].reshape(1,-1), 
-                               a_t4))
-        a_p_t4 = np.concatenate((a_p_t4[0,:].reshape(1,-1), 
-                                 a_p_t4[0,:].reshape(1,-1), 
-                                 a_p_t4))
-        
-        
-        p_T_t4 = np.zeros((len(a_t4),len(r_range)))
-        p_N_t4 = np.zeros((len(a_t4),len(r_range)))
-        for i in range(len(a_t4)):
-            p_N_t4[i,:], p_T_t4[i,:] = BEM_solver.calc_local_forces(
-                                                    r_range=r_range, 
-                                                    tsr=tsr_t4[i], 
-                                                    V_0=V_0_t4[i], 
-                                                    theta_p=theta_p_t4[i], 
-                                                    a=a_t4[i,:], 
-                                                    a_p=a_p_t4[i,:])
-            
-        
-        T_t4 = c_T_t4*.5*rho*np.pi*(R**2)*np.power(V_0_t4,2) * 1e-3
-        P_t4 = c_p_t4*BEM_solver.available_power(V=V_0_t4, R=R) * 1e-6
-        M_t4 = P_t4/omega_t4  * 1e3
-        
-        #Ashes results:
-        ash_V5,_ = BEM_solver.read_ashes("../01_ashes/00_V_5/Sensor Rotor.txt")
-        ash_V9,_ = BEM_solver.read_ashes("../01_ashes/01_V_9/Sensor Rotor.txt")
-        ash_V11,_ = BEM_solver.read_ashes("../01_ashes/02_V_11/Sensor Rotor.txt")
-        ash_V20,_ = BEM_solver.read_ashes("../01_ashes/03_V_20/Sensor Rotor.txt")
-        
-        T_t4_ash = [ash_V5["Thrust (aero)"].iloc[-1], 
-                    ash_V9["Thrust (aero)"].iloc[-1],
-                    ash_V11["Thrust (aero)"].iloc[-1],
-                    ash_V20["Thrust (aero)"].iloc[-1]]
-        
-        P_t4_ash = [ash_V5["Power (aero)"].iloc[-1], 
-                    ash_V9["Power (aero)"].iloc[-1],
-                    ash_V11["Power (aero)"].iloc[-1],
-                    ash_V20["Power (aero)"].iloc[-1]]
-        
-        M_t4_ash = [ash_V5["Torque (aero)"].iloc[-1], 
-                    ash_V9["Torque (aero)"].iloc[-1],
-                    ash_V11["Torque (aero)"].iloc[-1],
-                    ash_V20["Torque (aero)"].iloc[-1]]
-        
-        fig, ax = plt.subplots()
-        ax.plot(r_range, p_T_t4[2,:], c="k", ls="-", lw=1.5, zorder=2)
-        
-        ax.grid(zorder=1)
-        ax.set_xlabel(r"$r\:\unit{[\m]}$")
-        ax.set_ylabel(r"$p_T$")
-        fname = "_03_export/local_tangential_force"
-        fig.savefig(fname+".svg")
-        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
-        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-        plt.close(fig)
-        
-        fig, ax = plt.subplots()
-        ax.plot(r_range, p_N_t4[2,:], c="k", ls="-", lw=1.5, zorder=2)
-        
-        ax.grid(zorder=1)
-        ax.set_xlabel(r"$r\:\unit{[\m]}$")
-        ax.set_ylabel(r"$p_N$")
-        fname = "_03_export/local_normal_force"
-        fig.savefig(fname+".svg")
-        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
-        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-        plt.close(fig)
+        fname = "Sensor Blade [Span] [Blade 1].txt"
+        BEM_solver.plot_local_forces(V_0=5, 
+                                     ashes_file="../01_ashes/00_V_5/" + fname, 
+                                     plot_graphs = True)
+        BEM_solver.plot_local_forces(V_0=9, 
+                                     ashes_file="../01_ashes/01_V_9/" + fname, 
+                                     plot_graphs = True)
+        BEM_solver.plot_local_forces(V_0=11, 
+                                     ashes_file="../01_ashes/02_V_11/" + fname, 
+                                     plot_graphs = True)
+        BEM_solver.plot_local_forces(V_0=20, 
+                                     ashes_file="../01_ashes/03_V_20/" + fname, 
+                                     plot_graphs = True)
 
         end = perf_counter()
         print (f"Task 4 took {np.round(end-start,2)} s")
