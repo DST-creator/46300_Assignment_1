@@ -82,11 +82,18 @@ mpl.rcParams['savefig.bbox'] = "tight"
 class BEM (Utils_BEM):
     def __init__(self, R = 89.17, P_rtd = 10*1e6, 
                  v_in = 4, v_out = 25, rho=1.225, B=3,
+                 integ_method = "dC_p",
                  airfoil_files=[], bld_file="", t_airfoils = []):
         super().__init__(airfoil_files=airfoil_files, 
                          bld_file=bld_file, 
                          t_airfoils = t_airfoils)
         
+        #Check inputs
+        if integ_method not in ["dC_p", "p_T"]:
+            raise ValueError("Integration method must be 'dC_p' or 'p_T', not"
+                             + f" {integ_method}")
+        
+        self.integ_method = integ_method
         self.R = R              #[m] - Rotor radius 
         self.P_rtd = P_rtd  #[W] - Rated power
         self.rho = rho          #[kg/m^3] - Air density
@@ -442,7 +449,7 @@ class BEM (Utils_BEM):
         
         return a, a_p, F, conv_res, n
     
-    def integ_pT(self, tsr, theta_p, r_range,
+    def integ_p_T(self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
                              gaulert_method = "classic"):
@@ -505,7 +512,7 @@ class BEM (Utils_BEM):
 
         return c_p, c_T, a_arr, a_p_arr, F_arr
     
-    def integ_dCp_numerical (self, tsr, theta_p, r_range,
+    def integ_dC_p (self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
                              gaulert_method = "classic"):
@@ -751,20 +758,20 @@ class BEM (Utils_BEM):
                                      dtype=ctypes.c_double)
         gaulert_method_global = gaulert_method_shared.value.decode('utf-8')
      
-    def integ_cp_worker (self, tsr, theta_p):
+    def integ_dC_p_worker (self, tsr, theta_p):
         global r_range_global, c_global, tcr_global, beta_global, \
             sigma_global, gaulert_method_global
-        return self.integ_dCp_numerical(tsr=tsr, theta_p=theta_p, 
+        return self.integ_dC_p(tsr=tsr, theta_p=theta_p, 
                                         r_range=r_range_global,  
                                         r_range_type = "values",
                                         c=c_global, tcr=tcr_global, 
                                         beta=beta_global, sigma=sigma_global,
                                         gaulert_method = gaulert_method_global)
     
-    def integ_cp_worker_pT (self, tsr, theta_p):
+    def integ_p_T_worker (self, tsr, theta_p):
         global r_range_global, c_global, tcr_global, beta_global, \
             sigma_global, gaulert_method_global
-        return self.integ_pT(tsr=tsr, theta_p=theta_p, 
+        return self.integ_p_T(tsr=tsr, theta_p=theta_p, 
                              r_range=r_range_global,  
                              r_range_type = "values",
                              c=c_global, tcr=tcr_global, 
@@ -889,7 +896,7 @@ class BEM (Utils_BEM):
                               beta_shared, sigma_shared, 
                               gaulert_method_shared),
                     max_workers=6) as executor:
-                integrator_num = list(executor.map(self.integ_cp_worker,
+                integrator_num = list(executor.map(self.integ_dC_p_worker,
                                             tsr_comb,
                                             np.deg2rad(theta_p_comb),
                                             chunksize=csize))
@@ -918,7 +925,7 @@ class BEM (Utils_BEM):
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
                     
-                    cp_num, cT_num, a, a_p, F = self.integ_dCp_numerical (
+                    cp_num, cT_num, a, a_p, F = self.integ_dC_p (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
                         c=c, tcr=tcr, beta=beta, sigma=sigma,
                         r_range_type="values", gaulert_method=gaulert_method)
@@ -1051,7 +1058,7 @@ class BEM (Utils_BEM):
                               beta_shared, sigma_shared, 
                               gaulert_method_shared),
                     max_workers=6) as executor:
-                integrator_num = list(executor.map(self.integ_cp_worker_pT,
+                integrator_num = list(executor.map(self.integ_p_T_worker,
                                             tsr_comb,
                                             np.deg2rad(theta_p_comb),
                                             chunksize=csize))
@@ -1081,7 +1088,7 @@ class BEM (Utils_BEM):
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
                     
-                    cp_num, cT_num, a, a_p, F = self.integ_pT (
+                    cp_num, cT_num, a, a_p, F = self.integ_p_T (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
                         c=c, tcr=tcr, beta=beta, sigma=sigma,
                         r_range_type="values", gaulert_method=gaulert_method)
@@ -1113,8 +1120,7 @@ class BEM (Utils_BEM):
 
     def find_c_p_max (self, tsr_lims = [5,10], tsr_step = .5, 
                       theta_p_lims = [-3, 4], theta_p_step = .5,
-                      gaulert_method="classic", integ_method = "dC_p",
-                      multiprocessing=True,
+                      gaulert_method="classic", multiprocessing=True,
                       plot_2d = True, plot_3d = True):
         """Find the approximate tip speed ratio and pitch angle combination 
         within a specified range which results in a local maximum of the power 
@@ -1167,18 +1173,13 @@ class BEM (Utils_BEM):
                 coefficient as well as the Prandtl correction factor for all 
                 combinations of the tip speed and pitch angle range
         """
-        #Check inputs
-        if integ_method not in ["dC_p", "p_T"]:
-            raise ValueError("Integration method must be 'dC_p' or 'p_T', not"
-                             + f" {integ_method}")
-        
         r_range = self.bld_df.r
         tsr = np.arange(tsr_lims[0], tsr_lims[1] + tsr_step, tsr_step)
         theta_p=np.arange(theta_p_lims[0], theta_p_lims[1] + theta_p_step , 
                           theta_p_step)
         
         start = perf_counter()
-        if integ_method=="dC_p":
+        if self.integ_method=="dC_p":
             ds_cp, ds_bem = self.calc_cp_dCp (tsr_range=tsr, 
                                           theta_p_range=theta_p,
                                           r_range=r_range,
@@ -1362,7 +1363,7 @@ class BEM (Utils_BEM):
             theta_p_approx_func (function handle):
                 Approximation function of the pitch angle.
         """
-        
+
         if not hasattr(self, 'V_rtd'): #I.e. if V_rated has not been calculated yet
             print("Calculating V_rtd")
             _, _, _,  = self.find_v_rtd(plot_graphs=False)
@@ -1384,13 +1385,20 @@ class BEM (Utils_BEM):
         #Assumed maximum pitch angle: 35 deg (cf. Wind Energy Handbook)
         #Initialize calculation for rough step width
         for theta_p in range(35,0,-2):
-            cp, _, a, _, _ = self.integ_dCp_numerical (
-                tsr=tsr, theta_p=np.deg2rad(theta_p), 
-                r_range=r_range, r_range_type="values",
-                c=c, tcr=tcr, beta=beta, sigma=sigma,
-                gaulert_method="classic")
+            if self.integ_method == "dC_p":
+                c_p, _, _, _, _ = self.integ_dC_p (
+                    tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                    r_range=r_range, r_range_type="values",
+                    c=c, tcr=tcr, beta=beta, sigma=sigma,
+                    gaulert_method="classic")
+            else:
+                c_p, _, _, _, _ = self.integ_p_T (
+                    tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                    r_range=r_range, r_range_type="values",
+                    c=c, tcr=tcr, beta=beta, sigma=sigma,
+                    gaulert_method="classic")
             
-            if cp>=c_p_rtd:
+            if c_p>=c_p_rtd:
                 break
         
         #Search in smaller radius around the found value
@@ -1404,11 +1412,18 @@ class BEM (Utils_BEM):
             for theta_p in np.arange(theta_p+theta_p_radius,
                                      theta_p-(theta_p_radius+dtheta_p), 
                                      -dtheta_p):
-                c_p, _, _, _, _ = self.integ_dCp_numerical (
-                    tsr=tsr, theta_p=np.deg2rad(theta_p), 
-                    r_range=r_range, r_range_type="values",
-                    c=c, tcr=tcr, beta=beta, sigma=sigma,
-                    gaulert_method="classic")
+                if self.integ_method == "dC_p":
+                    c_p, _, _, _, _ = self.integ_dC_p (
+                        tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                        r_range=r_range, r_range_type="values",
+                        c=c, tcr=tcr, beta=beta, sigma=sigma,
+                        gaulert_method="classic")
+                else:
+                    c_p, _, _, _, _ = self.integ_p_T (
+                        tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                        r_range=r_range, r_range_type="values",
+                        c=c, tcr=tcr, beta=beta, sigma=sigma,
+                        gaulert_method="classic")
 
                 if c_p>=c_p_rtd:
                     break
@@ -1491,10 +1506,16 @@ class BEM (Utils_BEM):
                               gaulert_method_shared),
                     max_workers=6) as executor:
                 
-                integrator_num = list(executor.map(self.integ_cp_worker,
-                                            tsr_mesh,
-                                            np.deg2rad(theta_p_mesh),
-                                            chunksize = csize))
+                if self.integ_method == "dC_p":
+                    integrator_num = list(executor.map(self.integ_dC_p_worker,
+                                                tsr_mesh,
+                                                np.deg2rad(theta_p_mesh),
+                                                chunksize = csize))
+                else:
+                    integrator_num = list(executor.map(self.integ_p_T_worker,
+                                                tsr_mesh,
+                                                np.deg2rad(theta_p_mesh),
+                                                chunksize = csize))
 
             #Retrieve c_p values for each wind velocity and find theta_p which is 
             #closest to c_p_rtd
@@ -1709,9 +1730,14 @@ class BEM (Utils_BEM):
         I_below_rtd = np.logical_and(V_in<V_rtd, V_in>=self.v_in)
         if calc_exact:
             for i in np.argwhere(I_below_rtd).flatten():
-                c_p[i], c_T_i, _, _, _= self.integ_dCp_numerical(
-                    tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
-                    r_range = self.bld_df.r)
+                if self.integ_method == "dC_p": 
+                    c_p[i], c_T_i, _, _, _= self.integ_dC_p(
+                        tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
+                        r_range = self.bld_df.r)
+                else: 
+                    c_p[i], c_T_i, _, _, _= self.integ_p_T(
+                        tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
+                        r_range = self.bld_df.r)
                 
                 P[i] = self.available_power(V=V_in[i], rho = self.rho, 
                                             R=self.R) * c_p[i]
@@ -1737,9 +1763,15 @@ class BEM (Utils_BEM):
                                     theta_p_ar["V_0"], 
                                     theta_p_ar["theta_p"])
                 
-                c_p[i], c_T_i, _, _, _= self.integ_dCp_numerical(
-                    tsr=tsr,  theta_p=np.deg2rad(theta_p),
-                    r_range = self.bld_df.r)
+                if self.integ_method == "dC_p": 
+                    c_p[i], c_T_i, _, _, _= self.integ_dC_p(
+                        tsr=tsr, theta_p=np.deg2rad(theta_p),
+                        r_range = self.bld_df.r)
+                else: 
+                    c_p[i], c_T_i, _, _, _= self.integ_p_T(
+                        tsr=tsr, theta_p=np.deg2rad(theta_p),
+                        r_range = self.bld_df.r)
+
                 P[i] = self.available_power(V=V_in[i], rho = self.rho, 
                                             R=self.R) * c_p[i]
                 if calc_thrust:
@@ -2036,18 +2068,19 @@ if __name__ == "__main__":
     v_in = 4
     v_out = 25
     rho = 1.225
-
+    integ_method = "p_T"
     
 #%% Initialization for Assignment 1    
     R = 89.17
     P_rtd = 10.64*1e6
 
     BEM_solver =  BEM (R = R,
-                           B = B,
-                           P_rtd = P_rtd,
-                           v_in = v_in,
-                           v_out = v_out,
-                           rho = rho)
+                       B = B,
+                       P_rtd = P_rtd,
+                       v_in = v_in,
+                       v_out = v_out,
+                       rho = rho,
+                       integ_method = integ_method)
     
     Calc_sel = dict(T1=True,
                     T2=True, 
@@ -2059,8 +2092,7 @@ if __name__ == "__main__":
                      plot_2d = True,
                      plot_3d=True,
                      multiproc=True,
-                     gaulert="classic",
-                     integ_mtd = "dC_p")
+                     gaulert="classic")
     
     
     #Plot operating range
@@ -2077,7 +2109,6 @@ if __name__ == "__main__":
                 BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method=t1_inputs["gaulert"],
-                                        integ_method=t1_inputs["integ_mtd"],
                                         multiprocessing=t1_inputs["multiproc"])
                 
         elif t1_inputs["precision"] == "fine, full":
@@ -2088,20 +2119,18 @@ if __name__ == "__main__":
                                         plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method=t1_inputs["gaulert"],
-                                        integ_method=t1_inputs["integ_mtd"],
                                         multiprocessing=t1_inputs["multiproc"])
                 
         else:    
             #Fine resolution, only around final value
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.1], 
+                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.3], 
                                         tsr_step = .1, 
-                                        theta_p_lims = [-.5, .2], 
+                                        theta_p_lims = [-.5, .5], 
                                         theta_p_step = .1,
                                         plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method=t1_inputs["gaulert"],
-                                        integ_method=t1_inputs["integ_mtd"],
                                         multiprocessing=t1_inputs["multiproc"])
         end = perf_counter()
         print (f"Task 1 took {np.round(end-start,2)} s")
@@ -2313,6 +2342,6 @@ if __name__ == "__main__":
         print (f"Task 6 took {np.round(end-start,2)} s")
 
 #%% Testing
-    # c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_pT(tsr=5.5, 
+    # c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_p_T(tsr=5.5, 
     #                                                       theta_p=np.deg2rad(-4), 
     #                                                       r_range=BEM_solver.bld_df.r)
