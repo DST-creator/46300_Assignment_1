@@ -1921,7 +1921,7 @@ class BEM (Utils_BEM):
     
     def calc_task_six (self, r=80.14, tsr = 8, 
                        c_bounds = [0,3], dc=.5,
-                       theta_p_bounds = [-20, 20], dtheta_p=2,
+                       theta_p_bounds = [-5, 5], dtheta_p=1,
                        plot_graphs = False):
         for i in range (2):
             c_range = np.arange(c_bounds[0], c_bounds[1]+dc, dc)
@@ -1950,7 +1950,7 @@ class BEM (Utils_BEM):
                     a, a_p, _, _, _ = self.converge_BEM(r=r, tsr=tsr, 
                                                         theta_p = np.deg2rad(theta_p), 
                                                         c=c, sigma = sigma)
-                    dC_p  = 8*np.power(tsr,2)/(self.R**4)*a_p*(1-a)*np.power(r,3)
+                    dC_p  = 4*np.power(tsr,2)*((r/R)**2)*a_p*(1-a)
                     
                     #Save results to dataframe
                     ds_res["a"].loc[dict(c=c,theta_p=theta_p)] = a[0]
@@ -1970,7 +1970,6 @@ class BEM (Utils_BEM):
             a_p_max = ds_res["a_p"].sel(c=c_max, 
                                     theta_p = theta_p_max, 
                                     method = "nearest").values
-            phi_max = self.arctan_phi (a=a_max, a_p=a_p_max, r=r, tsr=tsr)
             
             if plot_graphs:
                 #Prepare meshgrids
@@ -2005,7 +2004,7 @@ class BEM (Utils_BEM):
             
             del ds_res
             
-            yield c_max, theta_p_max, phi_max
+            yield c_max, theta_p_max
         
     def insert_test_values(self):
         """Insert the previously determined results into the class
@@ -2054,8 +2053,8 @@ if __name__ == "__main__":
                     T2=True, 
                     T3=True, 
                     T4=True, 
-                    T5=False, 
-                    T6=False)
+                    T5=True, 
+                    T6=True)
     t1_inputs = dict(precision="fine, small",
                      plot_2d = True,
                      plot_3d=True,
@@ -2180,10 +2179,21 @@ if __name__ == "__main__":
                                                    calc_exact=True)
         
         #Plot the power 
+        v_rep = np.arange(4,26)
+        P_report = np.array([280.2, 799.1, 1532.7, 2506.1, 3730.7, 5311.8, 
+                             7286.5, 9698.3, 10639.1, 10648.5, 10639.3, 
+                             10683.7, 10642, 10640, 10639.9, 10652.8, 
+                             10646.2, 10644, 10641.2, 10639.5, 10643.6, 
+                             10635.7])*1e-3
+        
         fig, ax = plt.subplots()
         ax.axhline(BEM_solver.P_rtd*1e-6, c="k", ls="--", lw=1.2, zorder=2)
         ax.plot(V_0_ext, P*1e-6, 
-                c="k", ls="-", lw=1.5, zorder=3)
+                c="k", ls="-", lw=1.5, zorder=3,
+                label = "BEM Calculation")
+        ax.plot(v_rep, P_report, 
+                c="k", ls="--", lw=1.5, zorder=3,
+                label = "DTU Wind Energy Report-I-0092")
         ax.text(0.2, BEM_solver.P_rtd*1e-6*0.96, 
                 "$P_{rated}=" + f"{np.round(BEM_solver.P_rtd*1e-6,2)}" + r"\:\unit{MW}$", 
                 color='k', va='center', ha='center', size = "medium",
@@ -2201,12 +2211,21 @@ if __name__ == "__main__":
         plt.close(fig)
         
         #Plot T
+        T_report = np.array([225.9, 351.5, 498.1, 643.4, 797.3, 1009.1, 1245.8, 
+                             1507.4, 1270.8, 1082, 967.9, 890.8, 824.8, 
+                             774, 732.5, 698.4, 668.1, 642.1, 619.5, 599.8, 
+                             582.7, 567.2])
         fig, ax = plt.subplots()
-        ax.plot(V_0_ext, T*1e-6, c="k", ls="-", lw=1.5, zorder=2)
+        ax.plot(V_0_ext, T*1e-3, 
+                c="k", ls="-", lw=1.5, zorder=2,
+                label = "BEM Calculation")
+        ax.plot(v_rep, T_report, 
+                c="k", ls="--", lw=1.5, zorder=3,
+                label = "DTU Wind Energy Report-I-0092")
         
         ax.grid(zorder=1)
         ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
-        ax.set_ylabel(r"$T\:\unit{[\MN]}$")
+        ax.set_ylabel(r"$T\:\unit{[\kN]}$")
         ax.set_xticks(np.arange(0,V_0_ext[-1]+1))
         
         fname = "_03_export/Thrust_curve_full"
@@ -2288,13 +2307,12 @@ if __name__ == "__main__":
         start = perf_counter()
         task_six_gen = BEM_solver.calc_task_six(plot_graphs = True)
         
-        c_max_t6, theta_p_max_t6, phi_max_t6 = next(task_six_gen)
-        c_max_t6, theta_p_max_t6, phi_max_t6 = next(task_six_gen)
-        phi_max_t6 = np.rad2deg(phi_max_t6)
+        c_max_t6, theta_p_max_t6 = next(task_six_gen)
+        c_max_t6, theta_p_max_t6 = next(task_six_gen)
         end = perf_counter()
         print (f"Task 6 took {np.round(end-start,2)} s")
 
 #%% Testing
-    c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_pT(tsr=5.5, 
-                                                          theta_p=np.deg2rad(-4), 
-                                                          r_range=BEM_solver.bld_df.r)
+    # c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_pT(tsr=5.5, 
+    #                                                       theta_p=np.deg2rad(-4), 
+    #                                                       r_range=BEM_solver.bld_df.r)
