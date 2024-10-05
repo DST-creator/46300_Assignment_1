@@ -94,6 +94,7 @@ class BEM (Utils_BEM):
                              + f" {integ_method}")
         
         self.integ_method = integ_method
+        self.exp_fld = f"./_03_export/{integ_method}/"
         self.R = R              #[m] - Rotor radius 
         self.P_rtd = P_rtd  #[W] - Rated power
         self.rho = rho          #[kg/m^3] - Air density
@@ -1100,21 +1101,6 @@ class BEM (Utils_BEM):
                     
                     ds_c["c_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
                     ds_c["c_T"].loc[dict(tsr=tsr,theta_p=theta_p)] = cT_num
-                    
-                    
-# =============================================================================
-#                     fig, ax = plt.subplots()
-#                     ax.plot(r_range, p_T, c="k", ls="-", lw=1.5, zorder=2)
-#                     
-#                     ax.grid(zorder=1)
-#                     ax.set_xlabel(r"$r\:\unit{[\m]}$")
-#                     ax.set_ylabel(r"$p_T$")
-#                     fname = "_03_export/local_tangential_force"
-#                     fig.savefig(fname+".svg")
-#                     fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
-#                     fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-#                     plt.close(fig)
-# =============================================================================
         
         return ds_c, ds_bem
 
@@ -1231,7 +1217,9 @@ class BEM (Utils_BEM):
                               vline_label=r"$\lambda=" 
                                           + str(self.tsr_max) + r"$",
                               intersect_label=r"$C_{p,max}=" + 
-                                              str(round(self.c_p_max,3)) + r"$")
+                                              str(round(self.c_p_max,3)) + r"$",
+                              exp_fld=self.exp_fld, 
+                              fname = f"C_p_contour_{gaulert_method}")
             #Plot C_T
             self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
                               xticks=tsr_ticks, yticks=theta_p_ticks,
@@ -1241,17 +1229,23 @@ class BEM (Utils_BEM):
                                           + r"\:\unit{\degree}$",
                               vline=self.tsr_max, 
                               vline_label=r"$\lambda=" 
-                                          + str(self.tsr_max) + r"$")
+                                          + str(self.tsr_max) + r"$",
+                              exp_fld=self.exp_fld, 
+                              fname = f"C_T_contour_{gaulert_method}")
         
         if plot_3d:
             #Plot C_p
             self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
                               xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="surface", labels=label_lst + [r"$C_p$"])
+                         plt_type="surface", labels=label_lst + [r"$C_p$"],
+                         exp_fld=self.exp_fld, 
+                         fname = f"C_p_surface_{gaulert_method}")
             #Plot C_t
             self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
                               xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="surface", labels=label_lst + [r"$C_T$"])
+                         plt_type="surface", labels=label_lst + [r"$C_T$"],
+                         exp_fld=self.exp_fld, 
+                         fname = f"C_T_surface_{gaulert_method}")
         
         return self.c_p_max, self.tsr_max, self.theta_p_max, ds_cp, ds_bem
     
@@ -1305,7 +1299,7 @@ class BEM (Utils_BEM):
             ax.set_ylabel(r'$P\:\unit{[\MW]}$')
             ax.grid(zorder=1)
             
-            fname = "_03_export/Power_curve"
+            fname = self.exp_fld + "Power_curve"
             fig.savefig(fname+".svg")
             fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
             fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -1331,7 +1325,7 @@ class BEM (Utils_BEM):
             ax.set_ylabel(r'$\omega\:\unit{[{rad}/\s]}$')
             ax.grid(zorder=1)
             
-            fname = "_03_export/omega_over_V0"
+            fname = self.exp_fld + "omega_over_V0"
             fig.savefig(fname+".svg")
             fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
             fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -1924,7 +1918,7 @@ class BEM (Utils_BEM):
             ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
             ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
             
-            fname = f"_03_export/p_T_V{V_0}"
+            fname = self.exp_fld + f"p_T_V{V_0}"
             fig.savefig(fname+".svg")
             fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
             fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -1945,7 +1939,7 @@ class BEM (Utils_BEM):
             ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
             ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
             
-            fname = f"_03_export/p_N_V{V_0}"
+            fname = self.exp_fld + f"p_N_V{V_0}"
             fig.savefig(fname+".svg")
             fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
             fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -2025,7 +2019,8 @@ class BEM (Utils_BEM):
 
                                   intersect_label=r"$C_{p,max}=" + 
                                                   str(round(max_item.item(),4)) 
-                                                  + r"$")
+                                                  + r"$",
+                                  exp_fld=self.exp_fld)
             
             #Preparation for Second round
             c_bounds = [c_max-dc,c_max+dc]
@@ -2068,7 +2063,7 @@ if __name__ == "__main__":
     v_in = 4
     v_out = 25
     rho = 1.225
-    integ_method = "p_T"
+    integ_method = "dC_p"
     
 #%% Initialization for Assignment 1    
     R = 89.17
@@ -2083,16 +2078,16 @@ if __name__ == "__main__":
                        integ_method = integ_method)
     
     Calc_sel = dict(T1=True,
-                    T2=True, 
-                    T3=True, 
-                    T4=True, 
-                    T5=True, 
-                    T6=True)
-    t1_inputs = dict(precision="fine, small",
+                    T2=False, 
+                    T3=False, 
+                    T4=False, 
+                    T5=False, 
+                    T6=False)
+    t1_inputs = dict(precision="fine, full",
                      plot_2d = True,
                      plot_3d=True,
                      multiproc=True,
-                     gaulert="classic")
+                     gaulert="Madsen")
     
     
     #Plot operating range
@@ -2182,7 +2177,7 @@ if __name__ == "__main__":
         
         ax.legend(loc="lower right")
         
-        fname = "_03_export/theta_p_above_rated"
+        fname = BEM_solver.exp_fld + "theta_p_above_rated"
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -2232,8 +2227,9 @@ if __name__ == "__main__":
         ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
         ax.set_ylabel(r"$P\:\unit{[\MW]}$")
         ax.set_xticks(np.arange(0,V_0_ext[-1]+1))
+        ax.legend(loc = "lower center")
         
-        fname = "_03_export/Power_curve_full"
+        fname = BEM_solver.exp_fld + "Power_curve_full"
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -2256,8 +2252,9 @@ if __name__ == "__main__":
         ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
         ax.set_ylabel(r"$T\:\unit{[\kN]}$")
         ax.set_xticks(np.arange(0,V_0_ext[-1]+1))
+        ax.legend(loc = "lower center")
         
-        fname = "_03_export/Thrust_curve_full"
+        fname = BEM_solver.exp_fld + "Thrust_curve_full"
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -2286,7 +2283,7 @@ if __name__ == "__main__":
         labs = [l.get_label() for l in lns]
         ax1.legend(lns, labs, loc="center right")
         
-        fname = "_03_export/Coefficients_curve_full"
+        fname = BEM_solver.exp_fld + "Coefficients_curve_full"
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
@@ -2327,7 +2324,7 @@ if __name__ == "__main__":
         AEP_20, _ , _ = BEM_solver.calc_AEP(A=9, k=1.9, 
                                                     v_out=20)
         
-        BEM_solver.plot_weibull()
+        BEM_solver.plot_weibull(exp_fld=BEM_solver.exp_fld)
         end = perf_counter()
         print (f"Task 5 took {np.round(end-start,2)} s")
     

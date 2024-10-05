@@ -655,7 +655,7 @@ class Utils_BEM():
         return x
     
     @staticmethod
-    def plot_weibull(A=9, k=1.9):
+    def plot_weibull(A=9, k=1.9, exp_fld="./_03_export/"):
         
         V_range = np.arange(0, 31)
         h_w = k/A*np.power(V_range/A, k-1)*np.exp(-np.power(V_range/A, k))
@@ -680,7 +680,7 @@ class Utils_BEM():
         labs = [l.get_label() for l in lns]
         ax1.legend(lns, labs, loc="center right")
         
-        fname = "_03_export/Weibull_dist"
+        fname = exp_fld + "Weibull_dist"
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
