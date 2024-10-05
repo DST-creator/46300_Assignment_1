@@ -39,13 +39,15 @@ mpl.rcParams['figure.figsize'] = (16, 8)
 
 #Lines and markers
 mpl.rcParams['lines.linewidth'] = 1.2
-mpl.rcParams['lines.markersize'] = 10
+mpl.rcParams['lines.markersize'] = 7
 mpl.rcParams['scatter.marker'] = "+"
 mpl.rcParams['lines.color'] = "k"
 mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])
 # Cycle through linestyles with color black instead of different colors
 # mpl.rcParams['axes.prop_cycle'] = mpl.cycler('color', ['k', 'k', 'k', 'k'])\
 #                                 + mpl.cycler('linestyle', ['-', '--', '-.', ':'])
+plt_marker = "d"
+
 
 #Text sizes
 mpl.rcParams['font.size'] = 25
@@ -82,7 +84,7 @@ mpl.rcParams['savefig.bbox'] = "tight"
 class BEM (Utils_BEM):
     def __init__(self, R = 89.17, P_rtd = 10*1e6, 
                  v_in = 4, v_out = 25, rho=1.225, B=3,
-                 integ_method = "dC_p",
+                 integ_method = "dC_p", plt_marker="d",
                  airfoil_files=[], bld_file="", t_airfoils = []):
         super().__init__(airfoil_files=airfoil_files, 
                          bld_file=bld_file, 
@@ -95,12 +97,15 @@ class BEM (Utils_BEM):
         
         self.integ_method = integ_method
         self.exp_fld = f"./_03_export/{integ_method}/"
+        
         self.R = R              #[m] - Rotor radius 
         self.P_rtd = P_rtd  #[W] - Rated power
         self.rho = rho          #[kg/m^3] - Air density
         self.B = B              #[-] - Number of blades
         self.v_in = v_in        #[m/s] - cut-in velocity
         self.v_out = v_out      #[m/s] - cut-out velocity
+        
+        self.plt_marker = plt_marker
         
     def arctan_phi (self, a, a_p, r, tsr=-1, V_0=-1, omega = 1):
         """Calculate the angle between the plane of rotation and the relative 
@@ -509,7 +514,7 @@ class BEM (Utils_BEM):
         P_avail = .5*self.rho*np.pi*(self.R**2)*np.power(V_0,3)
         c_p = self.B*scipy.integrate.trapezoid(p_T*r_range, r_range)*omega/P_avail
         c_T = self.B*scipy.integrate.trapezoid(p_N, r_range)\
-                /.5*self.rho*np.pi*(self.R**2)*np.power(V_0,2)
+                /(.5*self.rho*np.pi*(self.R**2)*np.power(V_0,2))
 
         return c_p, c_T, a_arr, a_p_arr, F_arr
     
@@ -1308,7 +1313,8 @@ class BEM (Utils_BEM):
             
             # Plot omega over wind speed
             fig, ax = plt.subplots(figsize=(16, 10))
-            ax.plot(V_0, omega, zorder=3)
+            ax.plot(V_0, omega, 
+                    c="k", zorder=3)
             ax.axhline(self.omega_max, ls="--", lw=1.5, color="k", zorder=2)
             ax.text(0.2, self.omega_max*1.02, 
                     "$\omega_{max}=" + f"{round(self.omega_max,3)}" + r"\:\unit{rad/\s}$", 
@@ -1905,18 +1911,22 @@ class BEM (Utils_BEM):
         if plot_graphs:
             #Plot p_T
             fig, ax = plt.subplots()
-            ax.plot(r_range, p_T, c="k", ls="-", lw=1.5, zorder=2)
+            ax.plot(r_range, p_T, 
+                    marker = self.plt_marker, c="k", ls="-", zorder=2,
+                    label = "BEM Calculation")
             if plt_ash:
                 ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
                         data_ds["Torque force, distr."
                                 ].sel(t=times[-1]).values, 
-                        c="k", ls="--", lw=1.5, zorder=2)
+                        marker = "+", ms=10, c="k", ls="--", zorder=2,
+                        label = "Ashes simulation")
             
             
             ax.grid(zorder=1)
             ax.set_xlabel(r"$r\:\unit{[\m]}$")
             ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
             ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
+            ax.legend(loc = "best")
             
             fname = self.exp_fld + f"p_T_V{V_0}"
             fig.savefig(fname+".svg")
@@ -1927,17 +1937,21 @@ class BEM (Utils_BEM):
             
             #Plot p_N
             fig, ax = plt.subplots()
-            ax.plot(r_range, p_N, c="k", ls="-", lw=1.5, zorder=2)
+            ax.plot(r_range, p_N, 
+                    marker = self.plt_marker, c="k", ls="-", zorder=2,
+                    label = "BEM Calculation")
             if plt_ash:
                 ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
                         data_ds["Thrust force, distr."
                                 ].sel(t=times[-1]).values, 
-                        c="k", ls="--", lw=1.5, zorder=2)
+                        marker = "+", ms=10, c="k", ls="--", zorder=2,
+                        label = "Ashes simulation")
             
             ax.grid(zorder=1)
             ax.set_xlabel(r"$r\:\unit{[\m]}$")
             ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
             ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
+            ax.legend(loc = "best")
             
             fname = self.exp_fld + f"p_N_V{V_0}"
             fig.savefig(fname+".svg")
@@ -2063,7 +2077,7 @@ if __name__ == "__main__":
     v_in = 4
     v_out = 25
     rho = 1.225
-    integ_method = "dC_p"
+    integ_method = "p_T"
     
 #%% Initialization for Assignment 1    
     R = 89.17
@@ -2075,19 +2089,20 @@ if __name__ == "__main__":
                        v_in = v_in,
                        v_out = v_out,
                        rho = rho,
-                       integ_method = integ_method)
+                       integ_method = integ_method,
+                       plt_marker = plt_marker)
     
     Calc_sel = dict(T1=True,
-                    T2=False, 
-                    T3=False, 
-                    T4=False, 
-                    T5=False, 
-                    T6=False)
-    t1_inputs = dict(precision="fine, full",
-                     plot_2d = True,
-                     plot_3d=True,
+                    T2=True, 
+                    T3=True, 
+                    T4=True, 
+                    T5=True, 
+                    T6=True)
+    t1_inputs = dict(precision="fine, small",
+                     plot_2d = False,
+                     plot_3d=False,
                      multiproc=True,
-                     gaulert="Madsen")
+                     gaulert="classic")
     
     
     #Plot operating range
@@ -2151,15 +2166,15 @@ if __name__ == "__main__":
                                     21.963, 22.975])
         
         #Plot the pitch angles
-        V_0_rtd = np.floor(V_rtd)
+        V_0_rtd = np.floor(BEM_solver.V_rtd)
         i_rtd = np.where(V_0==V_0_rtd)[0][0]
         
         fig, ax = plt.subplots()
-        ax.scatter(V_0, theta_p_correct, 
+        ax.plot(V_0, theta_p_correct, 
                    label="DTU Wind Energy Report-I-0092", 
-                   marker = "+", c="k", zorder=2)
+                   marker = "+", ls = "-.", c="k", zorder=2)
         ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
-                c="k", ls="--", lw=1.5,
+                c="k", ls=":", lw=1.3,
                 label="Approximation function", zorder=2)
         V_0_ext = np.concatenate((np.arange(0,np.floor(BEM_solver.V_rtd)+1), 
                                 df_theta_p.V_0.values))
@@ -2167,7 +2182,7 @@ if __name__ == "__main__":
                 np.concatenate((np.full(len(V_0_ext)-len(df_theta_p), 
                                df_theta_p.theta_p[0]), 
                                df_theta_p.theta_p.values)), 
-                c="k", ls="-", lw=1.5, marker = "d", ms=6,
+                marker = plt_marker, c="k", ls="-", lw=1.5,
                 label="BEM calculation", zorder=2)
         ax.grid(zorder=1)
         ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
@@ -2188,9 +2203,10 @@ if __name__ == "__main__":
         #Plot the full power & Thrust curve and c_p & c_T distribution
         V_0 = np.arange (0,27).astype(float)
         # Insert the rated wind speed
-        V_0_ext = np.insert(V_0, 
-                            np.argwhere(V_0>=BEM_solver.V_rtd)[0][0],
-                            BEM_solver.V_rtd)
+        # V_0_ext = np.insert(V_0, 
+        #                     np.argwhere(V_0>=BEM_solver.V_rtd)[0][0],
+        #                     BEM_solver.V_rtd)
+        V_0_ext = V_0
         #Inserts points just before v_in and just after v_out
         V_0_ext = np.insert(V_0_ext, 
                             np.argwhere(V_0_ext>BEM_solver.v_out).flatten()[0],
@@ -2199,9 +2215,8 @@ if __name__ == "__main__":
                             np.argwhere(V_0_ext<BEM_solver.v_in).flatten()[-1]+1,
                             BEM_solver.v_in*0.999)
         P, T, c_p, c_T = BEM_solver.aero_power(V_in=V_0_ext,
-                                                   calc_thrust=True, 
-                                                   calc_exact=True)
-        
+                                               calc_thrust=True, 
+                                               calc_exact=True)
         #Plot the power 
         v_rep = np.arange(4,26)
         P_report = np.array([280.2, 799.1, 1532.7, 2506.1, 3730.7, 5311.8, 
@@ -2211,12 +2226,12 @@ if __name__ == "__main__":
                              10635.7])*1e-3
         
         fig, ax = plt.subplots()
-        ax.axhline(BEM_solver.P_rtd*1e-6, c="k", ls="--", lw=1.2, zorder=2)
+        ax.axhline(BEM_solver.P_rtd*1e-6, c="k", ls=":", lw=1.4, zorder=2)
         ax.plot(V_0_ext, P*1e-6, 
-                c="k", ls="-", lw=1.5, zorder=3,
+                marker = plt_marker, c="k", ls="-", zorder=3,
                 label = "BEM Calculation")
         ax.plot(v_rep, P_report, 
-                c="k", ls="--", lw=1.5, zorder=3,
+                marker = "+", ls = "--", c="k", zorder=3,
                 label = "DTU Wind Energy Report-I-0092")
         ax.text(0.2, BEM_solver.P_rtd*1e-6*0.96, 
                 "$P_{rated}=" + f"{np.round(BEM_solver.P_rtd*1e-6,2)}" + r"\:\unit{MW}$", 
@@ -2240,12 +2255,14 @@ if __name__ == "__main__":
                              1507.4, 1270.8, 1082, 967.9, 890.8, 824.8, 
                              774, 732.5, 698.4, 668.1, 642.1, 619.5, 599.8, 
                              582.7, 567.2])
+        np.argwhere(V_0_ext>BEM_solver.v_out).flatten()[0]
+        
         fig, ax = plt.subplots()
         ax.plot(V_0_ext, T*1e-3, 
-                c="k", ls="-", lw=1.5, zorder=2,
+                marker = plt_marker, c="k", ls="-", zorder=2,
                 label = "BEM Calculation")
         ax.plot(v_rep, T_report, 
-                c="k", ls="--", lw=1.5, zorder=3,
+                marker = "+", ls = "--", c="k", zorder=3,
                 label = "DTU Wind Energy Report-I-0092")
         
         ax.grid(zorder=1)
@@ -2264,20 +2281,22 @@ if __name__ == "__main__":
         fig, ax1 = plt.subplots()
         plt_c_p = ax1.plot(V_0_ext, c_p, 
                            label = "$C_p$",
-                           c="k", ls="-", lw=1.5, zorder=2)
+                           marker = plt_marker, c="k", ls="-", zorder=2)
         
         ax1.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
         ax1.set_ylabel(r"$C_p$")
         ax1.set_xticks(np.arange(0,V_0_ext[-1]+1))
         ax1.set_yticks(np.arange(0,1.1,.1))
+        ax1.set_ylim([-.05,1])
         ax1.grid(zorder=1)
     
         ax2 = ax1.twinx()
         plt_c_T = ax2.plot(V_0_ext, c_T, 
                            label = "$C_T$",
-                           c="k", ls="--", lw=1.5)
+                           marker = plt_marker, c="k", ls="--")
         ax2.set_ylabel(r"$C_T$")
         ax2.set_yticks(np.arange(0,1.1,.1))
+        ax2.set_ylim([-.05,1])
         
         lns = plt_c_p+plt_c_T
         labs = [l.get_label() for l in lns]
@@ -2299,17 +2318,21 @@ if __name__ == "__main__":
     if Calc_sel ["T4"]:
         start = perf_counter()
         fname = "Sensor Blade [Span] [Blade 1].txt"
+        if BEM_solver.integ_method=="dC_p":
+            ashes_fld = "../01_ashes/dC_p/"
+        else:
+            ashes_fld = "../01_ashes/p_T/"
         BEM_solver.plot_local_forces(V_0=5, 
-                                     ashes_file="../01_ashes/00_V_5/" + fname, 
+                                     ashes_file=ashes_fld + "00_V_5/" + fname, 
                                      plot_graphs = True)
         BEM_solver.plot_local_forces(V_0=9, 
-                                     ashes_file="../01_ashes/01_V_9/" + fname, 
+                                     ashes_file=ashes_fld + "01_V_9/" + fname, 
                                      plot_graphs = True)
         BEM_solver.plot_local_forces(V_0=11, 
-                                     ashes_file="../01_ashes/02_V_11/" + fname, 
+                                     ashes_file=ashes_fld + "02_V_11/" + fname, 
                                      plot_graphs = True)
         BEM_solver.plot_local_forces(V_0=20, 
-                                     ashes_file="../01_ashes/03_V_20/" + fname, 
+                                     ashes_file=ashes_fld + "03_V_20/" + fname, 
                                      plot_graphs = True)
 
         end = perf_counter()
