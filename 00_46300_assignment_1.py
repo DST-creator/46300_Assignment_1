@@ -1963,6 +1963,7 @@ class BEM (Utils_BEM):
                        c_bounds = [0,3], dc=.5,
                        theta_p_bounds = [-5, 5], dtheta_p=1,
                        plot_graphs = False):
+        beta = np.interp(r, self.bld_df.r, self.bld_df.beta)
         for i in range (2):
             c_range = np.arange(c_bounds[0], c_bounds[1]+dc, dc)
             theta_p_range = np.arange(theta_p_bounds[0], theta_p_bounds[1]+dtheta_p,
@@ -2011,21 +2012,24 @@ class BEM (Utils_BEM):
                                     theta_p = theta_p_max, 
                                     method = "nearest").values
             
+            
+            theta_max = theta_p_max + beta
+            
             if plot_graphs:
                 #Prepare meshgrids
-                c_mesh, theta_p_mesh = np.meshgrid(c_range, theta_p_range)
+                c_mesh, theta_mesh = np.meshgrid(c_range, theta_p_range+beta)
                 cp_mesh = ds_res["dC_p"].values.T
                 
                 label_lst = [r'$c\:\unit{[\m]}$', 
-                             r'$\theta_p\:\unit{[\degree]}$',
+                             r'$\theta\:\unit{[\degree]}$',
                              r"$C_p$"]
                     
-                self.plot_3d_data(X=c_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+                self.plot_3d_data(X=c_mesh, Y=theta_mesh, Z=cp_mesh, 
                                   plt_type="contour", 
                                   fname = f"C_p_local_{i}",
                                   labels=label_lst,
-                                  hline=theta_p_max, 
-                                  hline_label=r"$\theta_p=" + str(theta_p_max) 
+                                  hline=theta_max, 
+                                  hline_label=r"$\theta=" + str(round(theta_max,1)) 
                                               + r"\:\unit{\degree}$",
                                   vline=c_max, 
                                   vline_label=r"$c=" + str(c_max) 
@@ -2045,7 +2049,7 @@ class BEM (Utils_BEM):
             
             del ds_res
             
-            yield c_max, theta_p_max
+            yield c_max, theta_p_max, theta_max, max_item.item()
         
     def insert_test_values(self):
         """Insert the previously determined results into the class
@@ -2101,8 +2105,7 @@ if __name__ == "__main__":
     t1_inputs = dict(precision="fine, small",
                      plot_2d = False,
                      plot_3d=False,
-                     multiproc=True,
-                     gaulert="classic")
+                     multiproc=True)
     
     
     #Plot operating range
@@ -2114,25 +2117,47 @@ if __name__ == "__main__":
         start = perf_counter()
         if t1_inputs["precision"] == "medium, full":
             #Medium resolution, full search area
-            
+            c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method="Madsen",
+                                        multiprocessing=t1_inputs["multiproc"])
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
                 BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
-                                        gaulert_method=t1_inputs["gaulert"],
+                                        gaulert_method="classic",
                                         multiprocessing=t1_inputs["multiproc"])
+            
                 
         elif t1_inputs["precision"] == "fine, full":
             #Fine resolution, full search area
+            c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
+                BEM_solver.find_c_p_max(tsr_step = .1, 
+                                        theta_p_step = .1,
+                                        plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method="Madsen",
+                                        multiprocessing=t1_inputs["multiproc"])
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
                 BEM_solver.find_c_p_max(tsr_step = .1, 
                                         theta_p_step = .1,
                                         plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
-                                        gaulert_method=t1_inputs["gaulert"],
+                                        gaulert_method="classic",
                                         multiprocessing=t1_inputs["multiproc"])
+            
                 
         else:    
             #Fine resolution, only around final value
+            c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
+                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.3], 
+                                        tsr_step = .1, 
+                                        theta_p_lims = [-.5, .5], 
+                                        theta_p_step = .1,
+                                        plot_2d=t1_inputs["plot_2d"], 
+                                        plot_3d=t1_inputs["plot_3d"],
+                                        gaulert_method="Madsen",
+                                        multiprocessing=t1_inputs["multiproc"])
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
                 BEM_solver.find_c_p_max(tsr_lims = [7.4,8.3], 
                                         tsr_step = .1, 
@@ -2140,8 +2165,9 @@ if __name__ == "__main__":
                                         theta_p_step = .1,
                                         plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
-                                        gaulert_method=t1_inputs["gaulert"],
+                                        gaulert_method="classic",
                                         multiprocessing=t1_inputs["multiproc"])
+            
         end = perf_counter()
         print (f"Task 1 took {np.round(end-start,2)} s")
 
@@ -2173,9 +2199,9 @@ if __name__ == "__main__":
         ax.plot(V_0, theta_p_correct, 
                    label="DTU Wind Energy Report-I-0092", 
                    marker = "+", ls = "-.", c="k", zorder=2)
-        ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
-                c="k", ls=":", lw=1.3,
-                label="Approximation function", zorder=2)
+        # ax.plot(df_theta_p.V_0, approx_func(df_theta_p.V_0), 
+        #         c="k", ls=":", lw=1.3,
+        #         label="Approximation function", zorder=2)
         V_0_ext = np.concatenate((np.arange(0,np.floor(BEM_solver.V_rtd)+1), 
                                 df_theta_p.V_0.values))
         ax.plot(V_0_ext, 
@@ -2225,7 +2251,7 @@ if __name__ == "__main__":
                              10646.2, 10644, 10641.2, 10639.5, 10643.6, 
                              10635.7])*1e-3
         
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(16,10))
         ax.axhline(BEM_solver.P_rtd*1e-6, c="k", ls=":", lw=1.4, zorder=2)
         ax.plot(V_0_ext, P*1e-6, 
                 marker = plt_marker, c="k", ls="-", zorder=3,
@@ -2233,16 +2259,20 @@ if __name__ == "__main__":
         ax.plot(v_rep, P_report, 
                 marker = "+", ls = "--", c="k", zorder=3,
                 label = "DTU Wind Energy Report-I-0092")
-        ax.text(0.2, BEM_solver.P_rtd*1e-6*0.96, 
+        ax.text(0.2, BEM_solver.P_rtd*1e-6*0.94, 
                 "$P_{rated}=" + f"{np.round(BEM_solver.P_rtd*1e-6,2)}" + r"\:\unit{MW}$", 
-                color='k', va='center', ha='center', size = "medium",
-            transform=ax.get_yaxis_transform(), zorder=3)
+                color='k', va='center', ha='center',
+                fontsize=40,
+                transform=ax.get_yaxis_transform(), zorder=3)
         
         ax.grid(zorder=1)
-        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
-        ax.set_ylabel(r"$P\:\unit{[\MW]}$")
-        ax.set_xticks(np.arange(0,V_0_ext[-1]+1))
-        ax.legend(loc = "lower center")
+        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$", fontsize=40)
+        ax.set_ylabel(r"$P\:\unit{[\MW]}$", fontsize=40)
+        ax.set_xticks(np.arange(0,V_0_ext[-1]+1), np.arange(0,V_0_ext[-1]+1),
+                      fontsize=25, rotation='vertical')
+        ax.set_ylim([-.2,15])
+        ax.set_yticks(np.arange(0,15,2), np.arange(0,15,2), fontsize=25)
+        ax.legend(loc = "upper right", fontsize=40)
         
         fname = BEM_solver.exp_fld + "Power_curve_full"
         fig.savefig(fname+".svg")
@@ -2257,7 +2287,7 @@ if __name__ == "__main__":
                              582.7, 567.2])
         np.argwhere(V_0_ext>BEM_solver.v_out).flatten()[0]
         
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(16,10))
         ax.plot(V_0_ext, T*1e-3, 
                 marker = plt_marker, c="k", ls="-", zorder=2,
                 label = "BEM Calculation")
@@ -2266,10 +2296,14 @@ if __name__ == "__main__":
                 label = "DTU Wind Energy Report-I-0092")
         
         ax.grid(zorder=1)
-        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
-        ax.set_ylabel(r"$T\:\unit{[\kN]}$")
-        ax.set_xticks(np.arange(0,V_0_ext[-1]+1))
-        ax.legend(loc = "lower center")
+        ax.set_xlabel(r"$V_0\:\unit{[\m/\s]}$", fontsize=40)
+        ax.set_ylabel(r"$T\:\unit{[\kN]}$", fontsize=40)
+        ax.set_xticks(np.arange(0,V_0_ext[-1]+1), np.arange(0,V_0_ext[-1]+1),
+                      fontsize = 25, rotation='vertical')
+        ax.set_ylim([-50,2200])
+        ax.set_yticks(np.arange(0,2300,200), labels = np.arange(0,2300,200), 
+                      fontsize = 25)
+        ax.legend(loc = "upper right", fontsize=40)
         
         fname = BEM_solver.exp_fld + "Thrust_curve_full"
         fig.savefig(fname+".svg")
@@ -2278,11 +2312,20 @@ if __name__ == "__main__":
         plt.close(fig)
         
         #Plot c_p & c_T
+        c_p_report = [0.286, 0.418, 0.464, 0.478, 0.476, 0.476, 0.476, 0.476, 
+                      0.402, 0.317, 0.253, 0.207, 0.17, 0.142, 0.119, 0.102, 
+                      0.087, 0.075, 0.065, 0.057, 0.05, 0.044]
+        c_T_report = [0.923, 0.919, 0.904, 0.858, 0.814, 0.814, 0.814, 0.814, 
+                      0.577, 0.419, 0.323, 0.259, 0.211, 0.175, 0.148, 0.126, 
+                      0.109, 0.095, 0.084, 0.074, 0.066, 0.059]
         fig, ax1 = plt.subplots()
         plt_c_p = ax1.plot(V_0_ext, c_p, 
                            label = "$C_p$",
                            marker = plt_marker, c="k", ls="-", zorder=2)
-        
+        plt_c_p_report = ax1.plot(v_rep, c_p_report, 
+                                 marker = "+", ls = "-", lw = 1.3, c="k", 
+                                 zorder=3,
+                                 label = "$C_p$ - DTU Wind Energy Report-I-0092")
         ax1.set_xlabel(r"$V_0\:\unit{[\m/\s]}$")
         ax1.set_ylabel(r"$C_p$")
         ax1.set_xticks(np.arange(0,V_0_ext[-1]+1))
@@ -2294,13 +2337,17 @@ if __name__ == "__main__":
         plt_c_T = ax2.plot(V_0_ext, c_T, 
                            label = "$C_T$",
                            marker = plt_marker, c="k", ls="--")
+        plt_c_p_report = ax2.plot(v_rep, c_T_report, 
+                                 marker = "+", ls = "--", lw = 1.3, c="k", 
+                                 zorder=3,
+                                 label = "$C_T$ - DTU Wind Energy Report-I-0092")
         ax2.set_ylabel(r"$C_T$")
         ax2.set_yticks(np.arange(0,1.1,.1))
         ax2.set_ylim([-.05,1])
         
-        lns = plt_c_p+plt_c_T
+        lns = plt_c_p + plt_c_T + plt_c_p_report + plt_c_p_report
         labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc="center right")
+        ax1.legend(lns, labs, loc="upper right", ncols = 2)
         
         fname = BEM_solver.exp_fld + "Coefficients_curve_full"
         fig.savefig(fname+".svg")
@@ -2347,7 +2394,8 @@ if __name__ == "__main__":
         AEP_20, _ , _ = BEM_solver.calc_AEP(A=9, k=1.9, 
                                                     v_out=20)
         
-        BEM_solver.plot_weibull(exp_fld=BEM_solver.exp_fld)
+        BEM_solver.plot_weibull(exp_fld=BEM_solver.exp_fld, 
+                                V_rtd=BEM_solver.V_rtd)
         end = perf_counter()
         print (f"Task 5 took {np.round(end-start,2)} s")
     
@@ -2356,10 +2404,31 @@ if __name__ == "__main__":
         start = perf_counter()
         task_six_gen = BEM_solver.calc_task_six(plot_graphs = True)
         
-        c_max_t6, theta_p_max_t6 = next(task_six_gen)
-        c_max_t6, theta_p_max_t6 = next(task_six_gen)
+        c_t6, theta_p_t6, theta_t6, c_p_t6 = next(task_six_gen)
+        c_t6, theta_p_t6, theta_t6, c_p_t6 = next(task_six_gen)
+        
         end = perf_counter()
         print (f"Task 6 took {np.round(end-start,2)} s")
+
+#%% Export
+    
+    BEM_solver.exp_res_to_text(exp_fld=BEM_solver.exp_fld, 
+                               T1_vals=dict(tsr_c = tsr_max, 
+                                            theta_p_c = theta_p_max,
+                                            c_p_c = c_P_max,
+                                            tsr_m = tsr_max_mad, 
+                                            theta_p_m = theta_p_max_mad,
+                                            c_p_m = c_P_max_mad), 
+                               T2_vals=dict(V_rtd= V_rtd, 
+                                             omega_max= omega_max,
+                                             rpm_max =rpm_max), 
+                               T3_vals=dict(V_0 = df_theta_p.V_0, 
+                                            theta_p = df_theta_p.theta_p), 
+                               T5_vals=dict(AEP_20 = AEP_20*1e-6,
+                                            AEP_25 = AEP*1e-6),
+                               T6_vals=dict(c = c_t6, theta_p = theta_p_t6, 
+                                            theta = theta_t6, c_p = c_p_t6)
+                               )
 
 #%% Testing
     # c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_p_T(tsr=5.5, 

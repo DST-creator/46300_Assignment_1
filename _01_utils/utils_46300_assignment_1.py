@@ -11,6 +11,7 @@ from scipy.interpolate import interp1d
 import os
 from pathlib import Path
 
+
 #Concurrency imports
 import ctypes
 
@@ -654,8 +655,7 @@ class Utils_BEM():
         x = f*x_tmp + (1-f)*x_0 
         return x
     
-    @staticmethod
-    def plot_weibull(A=9, k=1.9, exp_fld="./_03_export/"):
+    def plot_weibull(self, A=9, k=1.9, V_rtd = 0, exp_fld="./_03_export/"):
         
         V_range = np.arange(0, 31)
         h_w = k/A*np.power(V_range/A, k-1)*np.exp(-np.power(V_range/A, k))
@@ -674,6 +674,21 @@ class Utils_BEM():
         plt_cum = ax2.plot(V_range, h_w_cum*100, ls="--", 
                            label = "Weibull cumulative density function")
         ax2.set_ylabel('$h_{w,cum}\:[\%]$')
+        
+        if V_rtd:
+            ax1.axvline(V_rtd, c="k", ls=":", lw=1.5)
+            
+            width, height = self.get_ax_size(fig, ax1)
+            xlims = ax1.get_xlim()
+            ylims = ax1.get_ylim()
+            
+            x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                       base_pos=V_rtd, offset=-20)
+            ax1.text(x_pos, 0.2,  r"$V_{rated}=" + f"{V_rtd:.2f}" 
+                                 + r"\:\unit{\m/\s}$", 
+                    color='k', va='center', ha='right', 
+                    size = "medium", rotation="vertical",
+                    transform=ax1.get_xaxis_transform())
         
         
         lns = plt_dist+plt_cum
@@ -916,3 +931,57 @@ class Utils_BEM():
                               data[:,i,:])
             
         return data_ds, times, unit_dict
+    
+    def exp_res_to_text(self, exp_fld, T1_vals={}, T2_vals={}, T3_vals={}, 
+                        T5_vals={}, T6_vals={}):
+        exp_str = ""
+        
+        if T1_vals:
+            t1_str = "Task 1:\n- Classic gaulert:\n\t- tsr_max: {tsr_c}\n\t"\
+                     + "- theta_p,max: {theta_p_c} °\n\t- C_p: {c_p_c:.3f}\n"\
+                     + "- Madsen:\n\t- tsr_max: {tsr_m}\n\t"\
+                     + "- theta_p,max: {theta_p_m} °\n\t- C_p: {c_p_m:.3f}\n\n"
+            exp_str += t1_str.format(**T1_vals)
+        if T2_vals:
+            t2_str = "Task 2:\n- V_0,rated: {V_rtd:.2f} m/s\n"\
+                     + "- omega_max: {omega_max:.3f} rad/s\n"\
+                     + "- rpm_max: {rpm_max:.2f} 1/min\n\n"
+             
+            exp_str += t2_str.format(**T2_vals)
+        if T3_vals:
+            t3_str = "Task 3:\n"
+            V_0 = T3_vals["V_0"]
+            theta_p = T3_vals["theta_p"]
+            
+            for i in range(len(theta_p)):
+                t3_str+=f"- V_0 = {V_0[i]:.2f} m/s: "\
+                              + f"theta_p = {theta_p[i]:.2f}°\n"
+             
+            exp_str += t3_str + "\n"
+        if T5_vals:
+            t5_str = "Task 5:\n"\
+                     + "- AEP(v_out=20 m/s): {AEP_20:.2e} MWh"\
+                     + "- AEP(v_out=25 m/s): {AEP_25:.2e} MWh\n\n"
+             
+            exp_str += t5_str.format(**T5_vals)
+        if T6_vals:
+            t6_str = "Task 6:\n"\
+                     + "- c: {c:.1f} m\n"\
+                     + "- theta_p: {theta_p:.1f} °\n"\
+                     + "- theta: {theta:.1f} °\n"\
+                     + "- C_p: {c_p:.2f}\n"\
+                     
+            exp_str += t6_str.format(**T6_vals)
+        
+
+        with open(exp_fld + "results.txt", 'w') as f:
+            f.write(exp_str)  
+            
+        
+        
+        
+        
+        
+        
+        
+        
