@@ -655,7 +655,9 @@ class Utils_BEM():
         x = f*x_tmp + (1-f)*x_0 
         return x
     
-    def plot_weibull(self, A=9, k=1.9, V_rtd = 0, exp_fld="./_03_export/"):
+    def plot_weibull(self, A=9, k=1.9, V_rtd = 0, v_in = 0, v_out = 0, 
+                     exp_fld="./_03_export/", lbls_below = True, 
+                     return_obj = False):
         
         V_range = np.arange(0, 31)
         h_w = k/A*np.power(V_range/A, k-1)*np.exp(-np.power(V_range/A, k))
@@ -675,18 +677,66 @@ class Utils_BEM():
                            label = "Weibull cumulative density function")
         ax2.set_ylabel('$h_{w,cum}\:[\%]$')
         
-        if V_rtd:
-            ax1.axvline(V_rtd, c="k", ls=":", lw=1.5)
-            
+        #Get axis size (needed for calculatin of label positions)
+        if lbls_below:
+            va = "top" 
+            ha = "center"
+        else:
             width, height = self.get_ax_size(fig, ax1)
             xlims = ax1.get_xlim()
             ylims = ax1.get_ylim()
             
-            x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
-                                       base_pos=V_rtd, offset=-20)
-            ax1.text(x_pos, 0.2,  r"$V_{rated}=" + f"{V_rtd:.2f}" 
+            va = "center" 
+            ha = "right"
+        if V_rtd:
+            ax1.axvline(V_rtd, c="k", ls=":", lw=1.5)
+            
+            #Set label position
+            if lbls_below:
+                x_pos = V_rtd
+                y_pos = -.07
+            else:
+                x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                           base_pos=V_rtd, offset=-20)
+                y_pos = .28
+                
+            ax1.text(x_pos, y_pos,  r"$V_{rated}=" + f"{V_rtd:.2f}" 
                                  + r"\:\unit{\m/\s}$", 
-                    color='k', va='center', ha='right', 
+                    color='k', va=va, ha=ha, 
+                    size = "medium", rotation="vertical",
+                    transform=ax1.get_xaxis_transform())
+        if v_in:
+            ax1.axvline(v_in, c="k", ls=":", lw=1.5)
+            
+            #Set label position
+            if lbls_below:
+                x_pos = v_in
+                y_pos = -.07
+            else:
+                x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                           base_pos=v_in, offset=-20)
+                y_pos = .36
+            
+            ax1.text(x_pos, y_pos,  r"$V_{in}=" + f"{v_in:.1f}" 
+                                 + r"\:\unit{\m/\s}$", 
+                    color='k', va=va, ha=ha, 
+                    size = "medium", rotation="vertical",
+                    transform=ax1.get_xaxis_transform())
+        if v_out:
+            ax1.axvline(v_out, c="k", ls=":", lw=1.5)
+            
+            #Set label position
+            if lbls_below:
+                x_pos = v_out
+                y_pos = -.07
+            else:
+                x_pos = self.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                           base_pos=v_out, offset=-20)
+                y_pos = .28
+            
+            ax1.text(x_pos, y_pos,  r"$V_{out}=" + f"{v_out:.1f}" 
+                                 + r"\:\unit{\m/\s}$", 
+                    color='k', va=va, ha=ha, 
                     size = "medium", rotation="vertical",
                     transform=ax1.get_xaxis_transform())
         
@@ -699,7 +749,11 @@ class Utils_BEM():
         fig.savefig(fname+".svg")
         fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-        plt.close(fig)
+        
+        if return_obj:
+            return fig, ax1, ax2
+        else:
+            plt.close(fig)
     
     @staticmethod
     def available_power(V, R, rho=1.225):

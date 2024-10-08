@@ -1516,18 +1516,17 @@ class BEM (Utils_BEM):
                                                 tsr_mesh,
                                                 np.deg2rad(theta_p_mesh),
                                                 chunksize = csize))
-
+            
             #Retrieve c_p values for each wind velocity and find theta_p which is 
             #closest to c_p_rtd
             for i_v in range(n_vels):
                 c_p_i = np.array([integrator_num[i_v*n_vars+j][0] 
                                   for j in range(n_vars)])
                 theta_p_i = theta_p_mesh[i_v*n_vars:(i_v+1)*n_vars]
+                
+                
                 i = np.asarray(c_p_i<=c_p_rtd[i_v]).nonzero()[0]
-                
-                if V_0_range[i_v] == 22:
-                    pass
-                
+
                 if i.size>=1:
                     i_above = i[-1]
                     #Explanation for the index i: First all indices are found for 
@@ -1556,7 +1555,7 @@ class BEM (Utils_BEM):
                 else:
                     print("Warning: Pitch angle not found in search range for "
                           + f"V_0={V_0_range[i_v]}")
-        
+
         #Save and return final values
         V_0_ext = np.append(np.insert(V_0_range, 0, self.V_rtd), v_out)
         theta_p_ext = np.append(np.insert(theta_p_est, 0, self.theta_p_max), 
@@ -2035,7 +2034,7 @@ class BEM (Utils_BEM):
                                   vline_label=r"$c=" + str(c_max) 
                                               + r"\:\unit{\m}$",
 
-                                  intersect_label=r"$C_{p,max}=" + 
+                                  intersect_label=r"$dC_{p,max}=" + 
                                                   str(round(max_item.item(),4)) 
                                                   + r"$",
                                   exp_fld=self.exp_fld)
@@ -2389,13 +2388,57 @@ if __name__ == "__main__":
 #%% Task 5
     if Calc_sel ["T5"]:
         start = perf_counter()
-        AEP, P, f_weibull = BEM_solver.calc_AEP(A=9, k=1.9, 
-                                                    v_out=-1)
-        AEP_20, _ , _ = BEM_solver.calc_AEP(A=9, k=1.9, 
-                                                    v_out=20)
+        A=9 
+        k=1.9
+        AEP, P, f_weibull = BEM_solver.calc_AEP(A=A, k=k, v_out=-1)
+        AEP_20, _ , _ = BEM_solver.calc_AEP(A=A, k=k, v_out=20)
         
-        BEM_solver.plot_weibull(exp_fld=BEM_solver.exp_fld, 
-                                V_rtd=BEM_solver.V_rtd)
+        
+        #Plot weibull
+        lbls_below = False
+        fig, ax1, ax2 = BEM_solver.plot_weibull(exp_fld=BEM_solver.exp_fld, 
+                                                V_rtd=BEM_solver.V_rtd,
+                                                v_in = BEM_solver.v_in,
+                                                v_out = BEM_solver.v_out,
+                                                lbls_below = lbls_below,
+                                                return_obj = True)
+        
+        #plot hline and vline for alternative cut out speed
+        v_out_2 = 20    
+        p_cum_v_out_2 = (1 - np.exp(-np.power(v_out_2/A, k)))*100
+        
+        #Determine label position
+        if lbls_below:
+            va = "top" 
+            ha = "center"
+            x_pos = v_out_2
+            y_pos = -.07
+        else:
+            va = "center" 
+            ha = "right"
+            width, height = BEM_solver.get_ax_size(fig, ax1)
+            xlims = ax1.get_xlim()
+            ylims = ax1.get_ylim()
+            
+            x_pos = BEM_solver.calc_text_pos(ax_lims=xlims, ax_size=width, 
+                                       base_pos=v_out_2, offset=-20)
+            y_pos = .28
+        
+        
+        ax1.axvline(v_out_2, c="k", ls=":", lw=1.5)
+        ax1.text(x_pos, y_pos,  r"$V_{out,alt}=" + f"{v_out_2:.1f}" 
+                             + r"\:\unit{\m/\s}$", 
+                color='k', va=va, ha=ha, 
+                size = "medium", rotation="vertical",
+                transform=ax1.get_xaxis_transform())
+        
+        
+        fname = BEM_solver.exp_fld + "Weibull_dist"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
+        
         end = perf_counter()
         print (f"Task 5 took {np.round(end-start,2)} s")
     
