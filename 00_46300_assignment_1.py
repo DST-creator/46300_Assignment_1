@@ -140,12 +140,6 @@ class BEM (Utils_BEM):
                velocity [rad]
         """
         
-        # #Check the input values
-        # a, a_p, r, tsr, V_0, omega = self.check_dims (a, a_p, r, tsr, V_0, omega)
-        
-        if np.any(a>=1) or np.any(a<0):
-            raise ValueError("Axial induction factor must be lie within [0,1[")
-        
         if np.any(a_p==-1):
             raise ValueError("Tangential induction factor must not be -1")
         
@@ -237,11 +231,6 @@ class BEM (Utils_BEM):
             dC_T (float):
                 Infinitesimal thrust coefficient [-]
         """
-        # #Check inputs
-        # # Check if the dimensions of the input values match (must be either 
-        # # scalar values or array-like of equal shape)
-        # r, tsr, theta_p, a_0, a_p_0 = self.check_dims (r, tsr, theta_p, 
-        #                                                a_0, a_p_0)
 
         #Check input for method
         if not type(gaulert_method) == str \
@@ -382,7 +371,6 @@ class BEM (Utils_BEM):
                 Residual deviation for a and a_p from the last iteration
             n (float):
                 Number of iteration
-            
         """
         if not np.isscalar(c):
             raise TypeError("Input for c must be scalar")
@@ -459,6 +447,56 @@ class BEM (Utils_BEM):
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
                              gaulert_method = "classic"):
+        """Calculate the power coefficient by integrating the tangential
+        force distribution along the blade length
+        
+        Parameters:
+            tsr (int or float):
+                Tip speed ratio [-]
+            theta_p (int or float):
+                Pitch angle of the blades [rad]
+            r_range (array-like):
+                Radii over which to integrate [m]. 
+                Can either be specified as by the lower & upper bound and the 
+                step width in the form [r_min, r_max, dr] (e.g. [2.8, 89, 1]) 
+                or as discrete radius values
+            r_range_type (str):
+                Selection whether the passed value for r_range are bounds or
+                a list of discrete values.
+                - "values": List of discrete values
+                - "bounds": Boundaries
+            c (int or float - optional):
+                Chord length [m]. If no value is provided, is is calculated 
+                from the inputs. 
+            tcr (int or float - optional):
+                Thickness to chord ratio [-]. If no value is provided, is is 
+                calculated  from the inputs. 
+            beta (int or float - optional):
+                Twist angle [rad]. If no value is provided, is is calculated 
+                from the inputs. 
+            sigma (int or float - optional):
+                Solidity [-]. If no value is provided, is is calculated 
+                from the inputs. 
+            gaulert_method (str):
+                Selection of the approach to use for the calculation of the 
+                induction factors.
+                Possible values:
+                - 'classic' (default): Classic practical approximation of the 
+                  Gaulert Correction for high values of a
+                - 'Madsen': Empirical formula by Madsen et. al.
+        
+        Returns:
+            c_p (float):
+                Power coefficient [-]
+            c_T (float):
+                Thrust coefficient [-]
+            a_arr (numpy array):
+                Axial induction factors of the radius sections [-]
+            a_p_arr (numpy array):
+                Tangential induction factors of the radius sections  [-]
+            F_arr (numpy array):
+                Prandtl correction factors of the radius sections [-]
+        """
         #Prepare inputs
         if r_range_type == "bounds":
             r_range, _, _, _ = self.check_radius_range (r_range, self.R)
@@ -525,17 +563,20 @@ class BEM (Utils_BEM):
         """Integrate the infinitesimal power coefficient over the rotor radius
         
         Parameters:
-            r_range (array-like):
-                Radii over which to integrate [m]. Can either be specified as by 
-                the lower & upper bound and the step width (e.g. [2.8, 89, 1])
-                or as discrete radius values
-            r_range_type (str):
-                Selection whether r_range specifies the bounds and step width 
-                or discrete values
             tsr (int or float):
                 Tip speed ratio [-]
             theta_p (int or float):
                 Pitch angle of the blades [rad]
+            r_range (array-like):
+                Radii over which to integrate [m]. 
+                Can either be specified as by the lower & upper bound and the 
+                step width in the form [r_min, r_max, dr] (e.g. [2.8, 89, 1]) 
+                or as discrete radius values
+            r_range_type (str):
+                Selection whether the passed value for r_range are bounds or
+                a list of discrete values.
+                - "values": List of discrete values
+                - "bounds": Boundaries
             c (array-like - optional):
                 Chord length for all radii sections [m]. If no value is 
                 provided, is is calculated  from the inputs. 
@@ -558,15 +599,15 @@ class BEM (Utils_BEM):
         
         Returns:
             c_p (float):
-                Integrated power coefficent [-]
-            c_T
-                Integrated thrust coefficent [-]
+                Power coefficient [-]
+            c_T (float):
+                Thrust coefficient [-]
             a_arr (numpy array):
-                Axial induction factors for the radii [-]
+                Axial induction factors of the radius sections [-]
             a_p_arr (numpy array):
-                Tangential induction factors for the radii [-]
+                Tangential induction factors of the radius sections  [-]
             F_arr (numpy array):
-                Prandtl correction factors for the radii [-]
+                Prandtl correction factors of the radius sections [-]
         """
         
         #Prepare inputs
@@ -651,22 +692,6 @@ class BEM (Utils_BEM):
                 Infinitesimal power coefficient at position r [1/m]
         """
         
-# =============================================================================
-#         #Check inputs
-#         # Check if the dimensions of the input values match (must be either 
-#         # scalar values or array-like of equal shape)
-#         r, tsr, a, a_p, theta_p = self.check_dims (r, tsr, a, a_p, theta_p)
-#         
-#         if np.any(r<0) or np.any (r>self.R):
-#             raise ValueError("Radius r must be within [0,R]")
-#         
-#         if np.any(tsr<=0):
-#             raise ValueError("Tip speed ratio must be positive and non-zero")
-#         
-#         if np.any(theta_p<-np.pi) or np.any(theta_p>np.pi):
-#             raise ValueError("Pitch must be within [-180, 180] degrees")
-# =============================================================================
-        
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
             a, a_p, F, _, _= self.converge_BEM(r=r, 
@@ -699,29 +724,7 @@ class BEM (Utils_BEM):
             c_T (float):
                 The thrust coefficient
         """
-        
-# =============================================================================
-#         #For radii in the last 2% of the rotor radius, the BEM does not return
-#         #reliable results. This range is therefore neglected and manually set
-#         #to 0
-#         i_end = np.where(r>=.995*self.R)
-#         r_end = r[i_end]
-#         
-#         # Radii for which the calculation needs to be performed
-#         i_valid = np.where(r<.995*self.R)
-#         r = r[i_valid]
-#         if np.array(a).size>1: a = a[i_valid]
-#         if np.array(F).size>1: F = F[i_valid]
-# =============================================================================
-        
-        #Calculate dc_p and append 0 for all points in the last 2 % of the 
-        #rotor radius
-        dc_T = 8/(self.R**2)*r*a*(1-a)*F
-# =============================================================================
-#         dc_T = np.append (dc_T, np.zeros(r_end.shape))
-# =============================================================================
-        
-        return dc_T
+        return 8/(self.R**2)*r*a*(1-a)*F
      
     def integ_dcT (self, r, a, F):
         """Integrates the function for dC_T over r for given values of the 
@@ -749,6 +752,29 @@ class BEM (Utils_BEM):
     @staticmethod
     def init_shared_memory(r_range_shared, c_shared, tcr_shared, beta_shared, 
                            sigma_shared, gaulert_method_shared):
+        """Set up non-altered inputs of the dC_p integration as global 
+        ctypes variables, so that they can be accessed by all processes while
+        multiprocessing
+        
+        Paremeters:
+            r_range_shared (array-like):
+                Radius sections to use in the integration [m]
+            c_shared (array-like):
+                chord lengths of the radius sections [m]
+            tcr_shared (array-like):
+                thickness-to-chord ratios of the radius sections [%]
+            beta_shared (array-like):
+                twist angles of the radius sections [rad]
+            sigma_shared (array-like):
+                Solidity of the radius sections [m]
+            gaulert_method_shared (array-like):
+                Gaulert method to use for the calculation of the induction 
+                factors
+        
+        Returns:
+            None
+        """
+        
         global r_range_global, c_global, tcr_global, beta_global, \
             sigma_global, gaulert_method_global
         
@@ -765,6 +791,19 @@ class BEM (Utils_BEM):
         gaulert_method_global = gaulert_method_shared.value.decode('utf-8')
      
     def integ_dC_p_worker (self, tsr, theta_p):
+        """Worker used for mulitprocessing the integ_dC_p function. All input
+        parameters of the integ_dC_p function except tsr and theta_p are read
+        from the global shared memory (cf. init_shared_memory)
+        
+        Parameters:
+            tsr (int or float):
+                Tip speed ratio [-]
+            theta_p (int or float):
+                Pitch angle of the blades [rad]
+        
+        Returns:
+           None
+        """
         global r_range_global, c_global, tcr_global, beta_global, \
             sigma_global, gaulert_method_global
         return self.integ_dC_p(tsr=tsr, theta_p=theta_p, 
@@ -775,6 +814,19 @@ class BEM (Utils_BEM):
                                         gaulert_method = gaulert_method_global)
     
     def integ_p_T_worker (self, tsr, theta_p):
+        """Worker used for mulitprocessing the integ_p_T function. All input
+        parameters of the integ_dC_p function except tsr and theta_p are read
+        from the global shared memory (cf. init_shared_memory)
+        
+        Parameters:
+            tsr (int or float):
+                Tip speed ratio [-]
+            theta_p (int or float):
+                Pitch angle of the blades [rad]
+        
+        Returns:
+           None
+        """
         global r_range_global, c_global, tcr_global, beta_global, \
             sigma_global, gaulert_method_global
         return self.integ_p_T(tsr=tsr, theta_p=theta_p, 
@@ -784,9 +836,10 @@ class BEM (Utils_BEM):
                              beta=beta_global, sigma=sigma_global,
                              gaulert_method = gaulert_method_global)
     
-    def calc_cp_dCp (self, tsr_range, theta_p_range, 
+    def calc_cp (self, tsr_range, theta_p_range, 
                       r_range, r_range_type="values",
                       gaulert_method = "classic",
+                      integ_method = "p_T",
                       multiprocessing = True):
         """Optimization of the tip speed ratio and pitch angle for the 
         maximization of the power coefficient.
@@ -811,7 +864,14 @@ class BEM (Utils_BEM):
                 - 'classic' (default): Classic practical approximation of the 
                   Gaulert Correction for high values of a
                 - 'Madsen': Empirical formula by Madsen et. al.
-           multiprocessing (bool - optional):
+            integ_method (str - optional):
+                Integration method to use for the calculation of c_p
+                - "dC_p": Integrate the infinitesimal power coefficient directly
+                - "p_T": Integrate the local tangential load distribution and
+                        calculate the power coefficient from the resulting 
+                        torque
+                default: "p_T"
+            multiprocessing (bool - optional):
                Selection whether to use multiprocessing for the BEM solving
                (default: True)
             
@@ -902,10 +962,16 @@ class BEM (Utils_BEM):
                               beta_shared, sigma_shared, 
                               gaulert_method_shared),
                     max_workers=6) as executor:
-                integrator_num = list(executor.map(self.integ_dC_p_worker,
-                                            tsr_comb,
-                                            np.deg2rad(theta_p_comb),
-                                            chunksize=csize))
+                if integ_method == "dC_p":
+                    integrator_num = list(executor.map(self.integ_dC_p_worker,
+                                                tsr_comb,
+                                                np.deg2rad(theta_p_comb),
+                                                chunksize=csize))
+                else:
+                    integrator_num = list(executor.map(self.integ_p_T_worker,
+                                                tsr_comb,
+                                                np.deg2rad(theta_p_comb),
+                                                chunksize=csize))
                 
                 for i in range(comb_len):
                     ds_c["c_p"].loc[dict(tsr=tsr_comb[i],
@@ -930,11 +996,20 @@ class BEM (Utils_BEM):
             #No Multiprocessing, just Iterating
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
-                    
-                    cp_num, cT_num, a, a_p, F = self.integ_dC_p (
-                        tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
-                        c=c, tcr=tcr, beta=beta, sigma=sigma,
-                        r_range_type="values", gaulert_method=gaulert_method)
+                    if integ_method == "dC_p":
+                        cp_num, cT_num, a, a_p, F = self.integ_dC_p (
+                            tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                            r_range=r_range,
+                            c=c, tcr=tcr, beta=beta, sigma=sigma,
+                            r_range_type="values", 
+                            gaulert_method=gaulert_method)
+                    else:
+                        cp_num, cT_num, a, a_p, F = self.integ_p_T (
+                            tsr=tsr, theta_p=np.deg2rad(theta_p), 
+                            r_range=r_range,
+                            c=c, tcr=tcr, beta=beta, sigma=sigma,
+                            r_range_type="values", 
+                            gaulert_method=gaulert_method)
                     
                     #Save results to dataframe
                     ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
@@ -946,169 +1021,6 @@ class BEM (Utils_BEM):
         
         return ds_c, ds_bem
     
-    def calc_cp_pT (self, tsr_range, theta_p_range, 
-                      r_range, r_range_type="values",
-                      gaulert_method = "classic",
-                      multiprocessing = True):
-        """Optimization of the tip speed ratio and pitch angle for the 
-        maximization of the power coefficient.
-        
-        Parameters:
-            r_range (array-like):
-                Radii over which to integrate [m]. Can either be specified as by 
-                the lower & upper bound and the step width (e.g. [2.8, 89, 1])
-                or as discrete radius values
-            r_range_type (str):
-                Selection whether r_range specifies the bounds and step width 
-                or discrete values
-            tsr_range (array-like):
-                Tip speed ratio range to consider
-            theta_p_range (array-like):
-                Pitch angle range to consider [deg]
-                NOTE: Value is assumed to be specified in degrees
-            gaulert_method (str):
-                Selection of the approach to use for the calculation of the 
-                induction factors.
-                Possible values:
-                - 'classic' (default): Classic practical approximation of the 
-                  Gaulert Correction for high values of a
-                - 'Madsen': Empirical formula by Madsen et. al.
-           multiprocessing (bool - optional):
-               Selection whether to use multiprocessing for the BEM solving
-               (default: True)
-            
-            
-            
-        Returns:
-            ds_c (xarray dataset):
-                Dataset containing the power and thrust coefficient for all
-                combinations of the tip speed and pitch angle range
-            ds_bem (xarray dataset):
-                Dataset containing the axial and tangential induction 
-                coefficient as well as the Prandtl correction factor for all 
-                combinations of the tip speed and pitch angle range
-        """
-        #Prepare inputs
-        if r_range_type == "bounds":
-            r_range, r_min, r_max, dr = self.check_radius_range (r_range, 
-                                                                 self.R)
-        elif r_range_type == "values":
-            r_range = np.array(r_range)
-            if np.any(r_range>self.R) or np.any(r_range<0):
-                raise ValueError("All radii in r_range must be within [0,R]")
-        else:
-            raise ValueError("Invalid value for r_range_type. Must be 'bounds'"
-                             " or 'values'")
-            
-        tsr_range = np.array(tsr_range)
-        theta_p_range = np.array(theta_p_range)
-        
-        #Prepare dataset for the values
-        ds_bem = xr.Dataset(
-            {},
-            coords={"r":r_range, 
-                    "tsr":tsr_range,
-                    "theta_p":theta_p_range}
-            )
-        
-        ds_bem_shape = [len(r_range), len(tsr_range), len(theta_p_range)]
-        
-        ds_bem["a"] = (list(ds_bem.coords.keys()),
-                       np.empty(ds_bem_shape))
-        ds_bem["a_p"] = (list(ds_bem.coords.keys()),
-                         np.empty(ds_bem_shape))
-        ds_bem["F"] = (list(ds_bem.coords.keys()),
-                         np.empty(ds_bem_shape))
-        
-        ds_c = xr.Dataset(
-            {},
-            coords={"tsr":tsr_range,
-                    "theta_p":theta_p_range}
-            )
-        
-        ds_c_shape = [len(tsr_range), len(theta_p_range)]
-        
-        ds_c["c_p"] = (list(ds_c.coords.keys()), 
-                                np.empty(ds_c_shape))
-        ds_c["c_T"] = (list(ds_c.coords.keys()), 
-                                np.empty(ds_c_shape))
-        
-        c = np.array([np.interp(r, self.bld_df.r, self.bld_df.c) 
-                      for r in r_range])
-        tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
-                        for r in r_range])
-        beta = np.deg2rad(np.array([np.interp(r, self.bld_df.r, self.bld_df.beta) 
-                         for r in r_range]))
-        sigma = np.divide(c*self.B, 2*np.pi*r_range)
-        
-        if multiprocessing:
-            r_range_shared = mpArray(ctypes.c_double, r_range)
-            c_shared = mpArray(ctypes.c_double, c)
-            tcr_shared = mpArray(ctypes.c_double, tcr)
-            beta_shared = mpArray(ctypes.c_double, beta)
-            sigma_shared = mpArray(ctypes.c_double, sigma)
-            gaulert_method_shared = mpArray(ctypes.c_char, 
-                                            gaulert_method.encode('utf-8'))
-            
-            
-            #Multiprocessing with executor.map
-            theta_p_comb, tsr_comb = np.meshgrid(theta_p_range, tsr_range)
-            theta_p_comb = theta_p_comb.flatten()
-            tsr_comb = tsr_comb.flatten()
-            
-            comb_len = len(tsr_comb)
-            csize = int(np.ceil(comb_len/6))
-            with concurrent.futures.ProcessPoolExecutor(
-                    initializer=self.init_shared_memory, 
-                    initargs=(r_range_shared, c_shared, tcr_shared, 
-                              beta_shared, sigma_shared, 
-                              gaulert_method_shared),
-                    max_workers=6) as executor:
-                integrator_num = list(executor.map(self.integ_p_T_worker,
-                                            tsr_comb,
-                                            np.deg2rad(theta_p_comb),
-                                            chunksize=csize))
-                
-                for i in range(comb_len):
-                    ds_c["c_p"].loc[dict(tsr=tsr_comb[i],
-                                           theta_p=theta_p_comb[i])
-                                      ] = integrator_num[i][0]
-                    ds_c["c_T"].loc[dict(tsr=tsr_comb[i],
-                                           theta_p=theta_p_comb[i])
-                                      ] = integrator_num[i][1]
-                    ds_bem["a"].loc[dict(r = r_range, 
-                                         tsr=tsr_comb[i],
-                                         theta_p=theta_p_comb[i])
-                                    ] = integrator_num[i][2]
-                    ds_bem["a_p"].loc[dict(r = r_range, 
-                                         tsr=tsr_comb[i],
-                                         theta_p=theta_p_comb[i])
-                                    ] = integrator_num[i][3]
-                    ds_bem["F"].loc[dict(r = r_range, 
-                                         tsr=tsr_comb[i],
-                                         theta_p=theta_p_comb[i])
-                                    ] = integrator_num[i][4]
-         
-        else:
-            #No Multiprocessing, just Iterating
-            for tsr in tsr_range:
-                for theta_p in theta_p_range:
-                    
-                    cp_num, cT_num, a, a_p, F = self.integ_p_T (
-                        tsr=tsr, theta_p=np.deg2rad(theta_p), r_range=r_range,
-                        c=c, tcr=tcr, beta=beta, sigma=sigma,
-                        r_range_type="values", gaulert_method=gaulert_method)
-                    
-                    #Save results to dataframe
-                    ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
-                    ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
-                    ds_bem["F"].loc[dict(tsr=tsr,theta_p=theta_p)] = F
-                    
-                    ds_c["c_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
-                    ds_c["c_T"].loc[dict(tsr=tsr,theta_p=theta_p)] = cT_num
-        
-        return ds_c, ds_bem
-
     def find_c_p_max (self, tsr_lims = [5,10], tsr_step = .5, 
                       theta_p_lims = [-3, 4], theta_p_step = .5,
                       gaulert_method="classic", multiprocessing=True,
@@ -1170,20 +1082,13 @@ class BEM (Utils_BEM):
                           theta_p_step)
         
         start = perf_counter()
-        if self.integ_method=="dC_p":
-            ds_cp, ds_bem = self.calc_cp_dCp (tsr_range=tsr, 
-                                          theta_p_range=theta_p,
-                                          r_range=r_range,
-                                          r_range_type = "values",
-                                          gaulert_method=gaulert_method,
-                                          multiprocessing=multiprocessing)
-        else:
-            ds_cp, ds_bem = self.calc_cp_pT (tsr_range=tsr, 
-                                          theta_p_range=theta_p,
-                                          r_range=r_range,
-                                          r_range_type = "values",
-                                          gaulert_method=gaulert_method,
-                                          multiprocessing=multiprocessing)
+        ds_cp, ds_bem = self.calc_cp (tsr_range=tsr, 
+                                      theta_p_range=theta_p,
+                                      r_range=r_range,
+                                      r_range_type = "values",
+                                      gaulert_method=gaulert_method,
+                                      integ_method=self.integ_method,
+                                      multiprocessing=multiprocessing)
         end = perf_counter()
         print (f"C_p_max calculation took {np.round(end-start,2)} s")
         
@@ -1816,8 +1721,7 @@ class BEM (Utils_BEM):
                 Maximum power coefficient of the turbine
                 If this parameter is not specified, the values from the class 
                 attribute is used or it is calculated using find_c_p_max
-            
-            
+             
         Returns:
             AEP (float):
                 The annual energy production in Wh
@@ -1856,7 +1760,22 @@ class BEM (Utils_BEM):
         return AEP, P, f_weibull
 
     
-    def plot_local_forces(self, V_0, ashes_file="", plot_graphs = False):
+    def plot_local_forces(self, V_0, ashes_file=""):
+        """Plot the local force distribution over the blade length for a 
+        specified wind speed.
+        Additionally, a results file from Ashes can be read in and plotted 
+        alongside the data
+        
+        Parameters:
+            V_0 (int or float):
+                The free flow wind speed
+            ashes_file (str or path-like object - optional):
+                File path for the ashes blade sensor (span) simulation results
+        
+        Returns:
+            None
+        """
+        
         #Check inputs
         if not hasattr(self, 'V_rtd'): #I.e. if pitch angles
             print("Calculating V_rtd")
@@ -1906,62 +1825,96 @@ class BEM (Utils_BEM):
             data_ds, times, _ = self.parse_ashes_blade (ashes_file)
         else:
             plt_ash = False
+
+        #Plot p_T
+        fig, ax = plt.subplots()
+        ax.plot(r_range, p_T, 
+                marker = self.plt_marker, c="k", ls="-", zorder=2,
+                label = "BEM Calculation")
+        if plt_ash:
+            ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
+                    data_ds["Torque force, distr."
+                            ].sel(t=times[-1]).values, 
+                    marker = "+", ms=10, c="k", ls="--", zorder=2,
+                    label = "Ashes simulation")
         
-        if plot_graphs:
-            #Plot p_T
-            fig, ax = plt.subplots()
-            ax.plot(r_range, p_T, 
-                    marker = self.plt_marker, c="k", ls="-", zorder=2,
-                    label = "BEM Calculation")
-            if plt_ash:
-                ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
-                        data_ds["Torque force, distr."
-                                ].sel(t=times[-1]).values, 
-                        marker = "+", ms=10, c="k", ls="--", zorder=2,
-                        label = "Ashes simulation")
-            
-            
-            ax.grid(zorder=1)
-            ax.set_xlabel(r"$r\:\unit{[\m]}$")
-            ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
-            ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
-            ax.legend(loc = "best")
-            
-            fname = self.exp_fld + f"p_T_V{V_0}"
-            fig.savefig(fname+".svg")
-            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
-            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-            plt.close(fig)
-            
-            
-            #Plot p_N
-            fig, ax = plt.subplots()
-            ax.plot(r_range, p_N, 
-                    marker = self.plt_marker, c="k", ls="-", zorder=2,
-                    label = "BEM Calculation")
-            if plt_ash:
-                ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
-                        data_ds["Thrust force, distr."
-                                ].sel(t=times[-1]).values, 
-                        marker = "+", ms=10, c="k", ls="--", zorder=2,
-                        label = "Ashes simulation")
-            
-            ax.grid(zorder=1)
-            ax.set_xlabel(r"$r\:\unit{[\m]}$")
-            ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
-            ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
-            ax.legend(loc = "best")
-            
-            fname = self.exp_fld + f"p_N_V{V_0}"
-            fig.savefig(fname+".svg")
-            fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
-            fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
-            plt.close(fig)
+        
+        ax.grid(zorder=1)
+        ax.set_xlabel(r"$r\:\unit{[\m]}$")
+        ax.set_ylabel(r"$p_T\:\unit{[\N/\m]}$")
+        ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
+        ax.legend(loc = "best")
+        
+        fname = self.exp_fld + f"p_T_V{V_0}"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
+        
+        
+        #Plot p_N
+        fig, ax = plt.subplots()
+        ax.plot(r_range, p_N, 
+                marker = self.plt_marker, c="k", ls="-", zorder=2,
+                label = "BEM Calculation")
+        if plt_ash:
+            ax.plot(data_ds.coords["r"].values+self.bld_df.r[0], 
+                    data_ds["Thrust force, distr."
+                            ].sel(t=times[-1]).values, 
+                    marker = "+", ms=10, c="k", ls="--", zorder=2,
+                    label = "Ashes simulation")
+        
+        ax.grid(zorder=1)
+        ax.set_xlabel(r"$r\:\unit{[\m]}$")
+        ax.set_ylabel(r"$p_N\:\unit{[\N/\m]}$")
+        ax.set_xticks(np.arange(0,(np.ceil(self.R/10)+1)*10,10))
+        ax.legend(loc = "best")
+        
+        fname = self.exp_fld + f"p_N_V{V_0}"
+        fig.savefig(fname+".svg")
+        fig.savefig(fname+".pdf", format="pdf")       # Save PDF for inclusion
+        fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
+        plt.close(fig)
     
     def calc_task_six (self, r=80.14, tsr = 8, 
                        c_bounds = [0,3], dc=.5,
                        theta_p_bounds = [-5, 5], dtheta_p=1,
                        plot_graphs = False):
+        """Calculate the maximum local power coefficient for a blade section at
+        radius r for a specified tip speed ratio within a search radius for the
+        chord length and the pitch angle.
+        
+        Parameters:
+            r (float - optional):
+                Radius of the blade section [m] - default: 80.14 m 
+            tsr (float - optional): 
+                tip speed ratio of the turbine - default: 8
+            c_bounds (array-like - optional):
+                lower and upper bound of the search radius for the chord 
+                length [m] - default: [0,3]
+            dc (float - optional):
+                Step width for the chord length variation (gets 
+                iteratively smaller during the calculation) - default: .5
+            theta_p_bounds (array-like - optional):
+                lower and upper bound of the search radius for the pitch angle
+                [deg] - default: [-5, 5]
+            dtheta_p (float - optional):
+                Initial step width for the pitch angle variation (gets 
+                iteratively smaller during the calculation) - default: 1
+            plot_graphs(bool - optional):
+                Selection whether the results should be plotted (default: False) 
+        
+        Returns:
+            c_max (float):
+                Chord length at which the maximum local power coefficient occurs
+            theta_p_max (float):
+                Pitch angle at which the maximum local power coefficient occurs
+            theta_max (float):
+                Angle with the rotor plane at which the maximum local power 
+                coefficient occurs
+            dC_p_max (float):
+                Maximum local power coefficient
+        """
         beta = np.interp(r, self.bld_df.r, self.bld_df.beta)
         for i in range (2):
             c_range = np.arange(c_bounds[0], c_bounds[1]+dc, dc)
@@ -2096,11 +2049,11 @@ if __name__ == "__main__":
                        plt_marker = plt_marker)
     
     Calc_sel = dict(T1=True,
-                    T2=True, 
-                    T3=True, 
-                    T4=True, 
-                    T5=True, 
-                    T6=True)
+                    T2=False, 
+                    T3=False, 
+                    T4=False, 
+                    T5=False, 
+                    T6=False)
     t1_inputs = dict(precision="fine, small",
                      plot_2d = False,
                      plot_3d=False,

@@ -521,14 +521,14 @@ class Utils_BEM():
         Parameters:
             r (int or float):
                 Radius to evaluate
-            tsr_range (array-like):
-                Range of tip speed ratio values
-            theta_p_range  (array-like):
-                Range of pitch angles [deg]
-            a_0 (int or float):
-                Axial induction factor
-            a_p_0 (int or float):
-                tTangential induction factor
+            tsr_range (array-like - optional):
+                Range of tip speed ratio values - default: np.arange(1,10,.5)
+            theta_p_range  (array-like - optional):
+                Range of pitch angles [deg] - default: np.arange(0,40,1)
+            a_0 (int or float - optional):
+                Axial induction factor - default: 0
+            a_p_0 (int or float - optional):
+                tTangential induction factor - default: 0
             
         Returns:
             None
@@ -646,11 +646,6 @@ class Utils_BEM():
             x (float or array-like):
                 Relaxed value for x
         """
-        # #Check inputs
-        # # Check if the dimensions of the input values match (must be either 
-        # # scalar values or array-like of equal shape)
-        # x_tmp, x_0, f = self.check_dims (x_tmp, x_0, f)
-        
         #Relax value
         x = f*x_tmp + (1-f)*x_0 
         return x
@@ -757,6 +752,19 @@ class Utils_BEM():
     
     @staticmethod
     def available_power(V, R, rho=1.225):
+        """Available wind power
+        
+        Parameters:
+            V (float):
+                Wind velocity [m/s]
+            R (float):
+                Rotor diameter [m]
+            rho (float - optional):
+                Air density kg/m^3 (default: 1.225)
+        
+        Return:
+            Available wind power [W]    
+        """
         return .5*rho*np.pi*(R**2)*np.power(V,3)
     
     @staticmethod
@@ -792,8 +800,9 @@ class Utils_BEM():
                 Size of the axis in pixels
             base_pos (float):
                 Base position of the text in the unit of the axis ticks
-            offset (float):
-                Desired offset of the text from the base_pos in pixels
+            offset (float - optional):
+                Desired offset of the text from the base_pos in pixels 
+                (default: -80)
         
         Returns:
             pos (float):
@@ -885,6 +894,7 @@ class Utils_BEM():
         Parameters:
             file_path (str or path-like):
                 File path of the simulation results .txt file
+        
         Returns:
             data_df (pandas dataframe):
                 Dataframe with the simulation timeseries
@@ -924,6 +934,27 @@ class Utils_BEM():
     
     @staticmethod
     def parse_ashes_blade (file_path):
+        """Read the blade spanwise sensor simulation results from the .txt 
+        file exported from Ashes.
+        The function finds the respective contents in the text file based on 
+        keywords and assumed number of lines between the header and the 
+        timeseries data.
+        
+        Parameters:
+            file_path (str or path-like):
+                File path of the simulation results .txt file
+        
+        Returns:
+            data_ds (xarray dataset):
+                Dataset with the blade sensors as variables and the timestamps
+                and rotor positions as coordinates
+            times (numpy array):
+                Time series of the simulation
+            unit_dict (dictionary):
+                Dictionary with the sensor names as keys and the respective 
+                units as the values 
+        """
+        
         if not os.path.exists(file_path): 
             raise OSError("Input file not found")
         
@@ -948,6 +979,9 @@ class Utils_BEM():
             if 'Blade span' in line:
                 section_index = i + header_index + 2
                 break
+        #Check if any data was found
+        if i == len(lines[header_index+1:])-1:
+            raise ValueError("No data found in the txt file")
         
         #Extract blade section coordinates
         r = np.array(lines[section_index].strip().split(' ')).astype(float)
@@ -974,6 +1008,10 @@ class Utils_BEM():
                data = np.delete(data, i, axis = 0)
                times = np.delete(times, i)
         
+        #Check if any data was found
+        if len(times)==0:
+           raise ValueError("No data found in the txt file")
+           
         data_ds = xr.Dataset(
             {},
             coords={"t":times,
@@ -988,6 +1026,25 @@ class Utils_BEM():
     
     def exp_res_to_text(self, exp_fld, T1_vals={}, T2_vals={}, T3_vals={}, 
                         T5_vals={}, T6_vals={}):
+        """Exports the results from the Tasks to a text file
+        
+        Parameters:
+            exp_fld(string or path-lik object):
+                Export folder path
+            T1_vals (dictionary):
+                Results from Task 1
+            T2_vals (dictionary):
+                Results from Task 2
+            T3_vals (dictionary):
+                Results from Task 3
+            T5_vals (dictionary):
+                Results from Task 5
+            T6_vals (dictionary):
+                Results from Task 6
+        
+        Returns:
+            None
+        """
         exp_str = ""
         
         if T1_vals:
