@@ -242,7 +242,7 @@ class BEM (Utils_BEM):
         # radius. If so, split the values and return a=a_p=-1 for them
         # later on. This region is known to be mathematically unstable
         if r>=.995*self.R:
-            return np.array([1,0,1,0])
+            return np.array([1,0,1,0,0,0])
         
         #Interpolate thickness and chord length and beta
         if c == -1:
@@ -310,8 +310,7 @@ class BEM (Utils_BEM):
             #Tangential induction factor without corrections (Eq. 6.36):
             a_p = 1 / (np.divide(4*F*np.sin(phi)*np.cos(phi), sigma*C_t) 
                        - 1) 
-        
-        return a, a_p, F, dC_T
+        return a, a_p, F, dC_T, C_t, C_n
     
     def converge_BEM(self, r, tsr, theta_p = np.pi, 
                      a_0 = 0, a_p_0 = 0, dC_T_0 = 0,
@@ -389,7 +388,7 @@ class BEM (Utils_BEM):
         elif sigma == -1:
             sigma = np.divide(c*self.B, 2*np.pi*r)
         
-        a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
+        a, a_p, F, dC_T_0, C_t, C_n = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
                                           a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0, 
                                           c=c, tcr = tcr, beta=beta, sigma=sigma,
                                           gaulert_method=gaulert_method)
@@ -417,7 +416,7 @@ class BEM (Utils_BEM):
             else:
                 a_p_0_corr = a_p_0
                 
-            a, a_p, F, dC_T_0 = self.calc_ind_factors(r=r, tsr = tsr, 
+            a, a_p, F, dC_T_0, C_t, C_n = self.calc_ind_factors(r=r, tsr = tsr, 
                                                     theta_p=theta_p, 
                                                     a_0=a_0_corr, a_p_0=a_p_0_corr, 
                                                     dC_T_0 = dC_T_0,
@@ -441,7 +440,7 @@ class BEM (Utils_BEM):
         
         conv_res = (abs(a-a_0), abs(a_p-a_p_0))
         
-        return a, a_p, F, conv_res, n
+        return a, a_p, F, conv_res, n, C_t, C_n
     
     def integ_p_T(self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
@@ -525,9 +524,10 @@ class BEM (Utils_BEM):
         #Calculat induction factors
         a_arr = np.array(np.zeros(len(r_range)))
         a_p_arr = np.array(np.zeros(len(r_range)))
-        F_arr = np.array(np.zeros(len(r_range)))
+        C_t = np.array(np.zeros(len(r_range)))
+        C_n = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
-            a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
+            a_i, a_p_i, _, _, _, C_t_i, C_n_i = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
                                                     c=c[i], tcr=tcr[i], 
                                                     beta=beta[i], 
@@ -538,23 +538,30 @@ class BEM (Utils_BEM):
 
             a_arr[i] = a_i.item()
             a_p_arr[i] = a_p_i.item()
-            F_arr[i] = F_i.item()
+            C_t[i] = C_t_i.item()
+            C_n[i] = C_n_i.item()
         
         V_0=10
-        p_N, p_T = self.calc_local_forces (r_range=r_range, 
-                                           tsr=tsr, 
-                                           V_0=V_0, 
-                                           theta_p=theta_p, 
-                                           a=a_arr, 
-                                           a_p=a_p_arr)
-        
         omega = tsr*V_0/self.R
+        local_loads_avail = .5*self.rho*c*(np.power(V_0*(1-a_arr),2) 
+                                 + np.power(omega*r_range*(1+a_p_arr),2))
+        p_T = C_t*local_loads_avail
+        p_N = C_n*local_loads_avail
+        
+        # p_N, p_T = self.calc_local_forces (r_range=r_range, 
+        #                                    tsr=tsr, 
+        #                                    V_0=V_0, 
+        #                                    theta_p=theta_p, 
+        #                                    a=a_arr, 
+        #                                    a_p=a_p_arr)
+        
+        
         P_avail = .5*self.rho*np.pi*(self.R**2)*np.power(V_0,3)
         c_p = self.B*scipy.integrate.trapezoid(p_T*r_range, r_range)*omega/P_avail
         c_T = self.B*scipy.integrate.trapezoid(p_N, r_range)\
                 /(.5*self.rho*np.pi*(self.R**2)*np.power(V_0,2))
 
-        return c_p, c_T, a_arr, a_p_arr, F_arr
+        return c_p, c_T, a_arr, a_p_arr, p_T, p_N
     
     def integ_dC_p (self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
@@ -640,7 +647,7 @@ class BEM (Utils_BEM):
         a_p_arr = np.array(np.zeros(len(r_range)))
         F_arr = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
-            a_i, a_p_i, F_i, _, _ = self.converge_BEM(r=r, 
+            a_i, a_p_i, F_i, _, _, _, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr, 
                                                     c=c[i], tcr=tcr[i], 
                                                     beta=beta[i], 
@@ -694,7 +701,7 @@ class BEM (Utils_BEM):
         
         #Check if a or a_p have a default value. If so, calculate them using BEM
         if any(np.any(var==-1) for var in [a, a_p]):
-            a, a_p, F, _, _= self.converge_BEM(r=r, 
+            a, a_p, F, _, _,_, _= self.converge_BEM(r=r, 
                                                 tsr=tsr, 
                                                 theta_p=theta_p,
                                                 gaulert_method = gaulert_method)
@@ -988,23 +995,20 @@ class BEM (Utils_BEM):
                                          tsr=tsr_comb[i],
                                          theta_p=theta_p_comb[i])
                                     ] = integrator_num[i][3]
-                    ds_bem["F"].loc[dict(r = r_range, 
-                                         tsr=tsr_comb[i],
-                                         theta_p=theta_p_comb[i])
-                                    ] = integrator_num[i][4]
+
         else:
             #No Multiprocessing, just Iterating
             for tsr in tsr_range:
                 for theta_p in theta_p_range:
                     if integ_method == "dC_p":
-                        cp_num, cT_num, a, a_p, F = self.integ_dC_p (
+                        cp_num, cT_num, a, a_p, _ = self.integ_dC_p (
                             tsr=tsr, theta_p=np.deg2rad(theta_p), 
                             r_range=r_range,
                             c=c, tcr=tcr, beta=beta, sigma=sigma,
                             r_range_type="values", 
                             gaulert_method=gaulert_method)
                     else:
-                        cp_num, cT_num, a, a_p, F = self.integ_p_T (
+                        cp_num, cT_num, a, a_p, _, _ = self.integ_p_T (
                             tsr=tsr, theta_p=np.deg2rad(theta_p), 
                             r_range=r_range,
                             c=c, tcr=tcr, beta=beta, sigma=sigma,
@@ -1014,7 +1018,6 @@ class BEM (Utils_BEM):
                     #Save results to dataframe
                     ds_bem["a"].loc[dict(tsr=tsr,theta_p=theta_p)] = a
                     ds_bem["a_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = a_p
-                    ds_bem["F"].loc[dict(tsr=tsr,theta_p=theta_p)] = F
                     
                     ds_c["c_p"].loc[dict(tsr=tsr,theta_p=theta_p)] = cp_num
                     ds_c["c_T"].loc[dict(tsr=tsr,theta_p=theta_p)] = cT_num
@@ -1297,7 +1300,7 @@ class BEM (Utils_BEM):
                     c=c, tcr=tcr, beta=beta, sigma=sigma,
                     gaulert_method="classic")
             else:
-                c_p, _, _, _, _ = self.integ_p_T (
+                c_p, _, _, _, _, _ = self.integ_p_T (
                     tsr=tsr, theta_p=np.deg2rad(theta_p), 
                     r_range=r_range, r_range_type="values",
                     c=c, tcr=tcr, beta=beta, sigma=sigma,
@@ -1324,7 +1327,7 @@ class BEM (Utils_BEM):
                         c=c, tcr=tcr, beta=beta, sigma=sigma,
                         gaulert_method="classic")
                 else:
-                    c_p, _, _, _, _ = self.integ_p_T (
+                    c_p, _, _, _, _, _ = self.integ_p_T (
                         tsr=tsr, theta_p=np.deg2rad(theta_p), 
                         r_range=r_range, r_range_type="values",
                         c=c, tcr=tcr, beta=beta, sigma=sigma,
@@ -1639,7 +1642,7 @@ class BEM (Utils_BEM):
                         tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
                         r_range = self.bld_df.r)
                 else: 
-                    c_p[i], c_T_i, _, _, _= self.integ_p_T(
+                    c_p[i], c_T_i, _, _, _, _= self.integ_p_T(
                         tsr=self.tsr_max, theta_p=np.deg2rad(self.theta_p_max),
                         r_range = self.bld_df.r)
                 
@@ -1672,7 +1675,7 @@ class BEM (Utils_BEM):
                         tsr=tsr, theta_p=np.deg2rad(theta_p),
                         r_range = self.bld_df.r)
                 else: 
-                    c_p[i], c_T_i, _, _, _= self.integ_p_T(
+                    c_p[i], c_T_i, _, _, _, _= self.integ_p_T(
                         tsr=tsr, theta_p=np.deg2rad(theta_p),
                         r_range = self.bld_df.r)
 
@@ -1806,7 +1809,7 @@ class BEM (Utils_BEM):
         a = np.array(np.zeros(len(r_range)))
         a_p = np.array(np.zeros(len(r_range)))
         for i,r in enumerate(r_range):
-            a_i, a_p_i, _, _, _ = self.converge_BEM(r=r, 
+            a_i, a_p_i, _, _, _,_, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr,
                                                     theta_p=np.deg2rad(theta_p))
             a[i] = a_i.item()
@@ -1940,7 +1943,7 @@ class BEM (Utils_BEM):
             for c in c_range:
                 sigma = self.calc_solidity(r, c)
                 for theta_p in theta_p_range:
-                    a, a_p, _, _, _ = self.converge_BEM(r=r, tsr=tsr, 
+                    a, a_p, _, _, _,_ , _= self.converge_BEM(r=r, tsr=tsr, 
                                                         theta_p = np.deg2rad(theta_p), 
                                                         c=c, sigma = sigma)
                     dC_p  = 4*np.power(tsr,2)*((r/R)**2)*a_p*(1-a)
@@ -2427,6 +2430,6 @@ if __name__ == "__main__":
                                )
 
 #%% Testing
-    # c_p, c_T, a_arr, a_p_arr, F_arr = BEM_solver.integ_p_T(tsr=5.5, 
+    # c_p, c_T, a_arr, a_p_arr, p_T, p_N = BEM_solver.integ_p_T(tsr=5.5, 
     #                                                       theta_p=np.deg2rad(-4), 
     #                                                       r_range=BEM_solver.bld_df.r)
