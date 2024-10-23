@@ -3164,7 +3164,7 @@
 \end{pgfscope}%
 \begin{pgfscope}%
 \pgfsys@transformshift{11.958333in}{1.061508in}%
-\pgftext[left,bottom]{\includegraphics[interpolate=true,width=0.416667in,height=8.298611in]{./04_figures/01_Plots/C_p_contour_classic-img0.png}}%
+\pgftext[left,bottom]{\includegraphics[interpolate=true,width=0.416667in,height=8.298611in]{./04_figures/01_Plots/C_p_contour_classic_it2-img0.png}}%
 \end{pgfscope}%
 \begin{pgfscope}%
 \pgfsetbuttcap%

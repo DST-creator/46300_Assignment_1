@@ -882,8 +882,6 @@ class BEM (Utils_BEM):
                Selection whether to use multiprocessing for the BEM solving
                (default: True)
             
-            
-            
         Returns:
             ds_c (xarray dataset):
                 Dataset containing the power and thrust coefficient for all
@@ -1024,10 +1022,12 @@ class BEM (Utils_BEM):
         
         return ds_c, ds_bem
     
-    def find_c_p_max (self, tsr_lims = [5,10], tsr_step = .5, 
-                      theta_p_lims = [-3, 4], theta_p_step = .5,
+    def find_c_p_max (self, tsr_lims = [5,10], 
+                      theta_p_lims = [-3, 4],
                       gaulert_method="classic", multiprocessing=True,
-                      plot_2d = True, plot_3d = True):
+                      iterative=True,
+                      init_steps=(1,1), fin_steps=(.1,.1),
+                      plot_2d = True, plot_3d = True, plot_iter = False):
         """Find the approximate tip speed ratio and pitch angle combination 
         within a specified range which results in a local maximum of the power 
         coeffient
@@ -1055,12 +1055,28 @@ class BEM (Utils_BEM):
            multiprocessing (bool - optional):
                Selection whether to use multiprocessing for the BEM solving
                (default: True)
+           iterative (bool - optional):
+               Selection whether the calculation should be performed 
+               iteratively with decreasing step width and search space size 
+               for each iteration (default: True)
+           init_steps (tuple - optional):
+               Steps sizes for the first iteration for the tip speed ratio 
+               (tsr) and pitch angle (theta_p). (default: (1,1))
+               Note: if iterative is set to False, then this step width is the 
+               final resolution of the search
+           init_steps (tuple - optional):
+               Steps sizes for the final iteration for the tip speed ratio 
+               (tsr) and pitch angle (theta_p). (default: (.1,.1))
            plot_2d (bool - optional):
                Selection whether the results should be plotted in a 2d contour 
                plot (default: True)
            plot_3d (bool - optional):
                Selection whether the results should be plotted in a 3d surface
                plot (default: True)
+           plot_mode (str - optional):
+               Selection whether the results of each iteration should be 
+               plotted (default: False)
+               
                
         Returns:
             c_p_max (float):
@@ -1080,85 +1096,202 @@ class BEM (Utils_BEM):
                 combinations of the tip speed and pitch angle range
         """
         r_range = self.bld_df.r
-        tsr = np.arange(tsr_lims[0], tsr_lims[1] + tsr_step, tsr_step)
-        theta_p=np.arange(theta_p_lims[0], theta_p_lims[1] + theta_p_step , 
-                          theta_p_step)
+        if iterative:
+            for i in range(2):
+                step_lst = np.array([1, .5, .1])
+                steps_in = np.logical_and(step_lst<=init_steps[i], 
+                                              step_lst>=fin_steps[i])
+                step_lst = step_lst[np.argwhere(steps_in).flatten()]
+                #If the first step width is close to the initial step width, 
+                # then replace it, else insert the initial step width
+                if abs(step_lst[0]-init_steps[i])\
+                    /step_lst[0]-step_lst[1]>=.75:
+                    step_lst[0]=init_steps[i]
+                else:
+                    np.insert(step_lst, 0, init_steps[i])
+                #If the last step width is close to the final step width, 
+                # then replace it, else insert the final step width
+                if abs(step_lst[-1]-fin_steps[i])\
+                    /step_lst[-2]-step_lst[-1]<=.25:
+                    step_lst[-1]=fin_steps[i]
+                else:
+                    np.append(step_lst, fin_steps[i])
+                    
+                if i == 0:
+                   tsr_steps_lst = step_lst 
+                else:
+                   theta_p_steps_lst = step_lst 
+        else:
+            tsr_steps_lst = [init_steps[0]]
+            theta_p_steps_lst = [init_steps[1]]
         
-        start = perf_counter()
-        ds_cp, ds_bem = self.calc_cp (tsr_range=tsr, 
-                                      theta_p_range=theta_p,
-                                      r_range=r_range,
-                                      r_range_type = "values",
-                                      gaulert_method=gaulert_method,
-                                      integ_method=self.integ_method,
-                                      multiprocessing=multiprocessing)
-        end = perf_counter()
-        print (f"C_p_max calculation took {np.round(end-start,2)} s")
+        for it in range(len(tsr_steps_lst)):
+            tsr_step, theta_p_step = [tsr_steps_lst[it], theta_p_steps_lst[it]]
+            
+            if it>0: 
+                #For all iterations after the initial one, the bounds of the 
+                #search area can be removed since they were already evaulated 
+                #in the previous iteration
+                tsr_lims = [tsr_lims[0]+tsr_step, tsr_lims[1]-tsr_step]
+                theta_p_lims = [theta_p_lims[0]+theta_p_step, 
+                                    theta_p_lims[1]-theta_p_step]
+            
+            tsr = np.arange(tsr_lims[0], tsr_lims[1] + tsr_step, tsr_step)
+            theta_p=np.arange(theta_p_lims[0], theta_p_lims[1] + theta_p_step, 
+                              theta_p_step)
+            
+            start = perf_counter()
+            ds_cp, ds_bem = self.calc_cp (tsr_range=tsr, 
+                                          theta_p_range=theta_p,
+                                          r_range=r_range,
+                                          r_range_type = "values",
+                                          gaulert_method=gaulert_method,
+                                          integ_method=self.integ_method,
+                                          multiprocessing=multiprocessing)
+            end = perf_counter()
+            print (f"C_p_max calculation (iteration {it}) took "
+                   + f"{np.round(end-start,2)} s")
+            
+            #Maximum C_P and corresponding coordinates
+            c_p_arr= ds_cp["c_p"]
+            c_p_max = c_p_arr.max().item()
+            
+            # Find the coordinates where the maximum value occurs
+            max_coords = c_p_arr.where(c_p_arr==c_p_arr.max(), drop=True).coords
+            tsr_max, theta_p_max = [round(coord.values.item(),3) 
+                          for dim, coord in max_coords.items()]
+            
+            #Find c_T max
+            c_T_max = float(ds_cp["c_T"].sel(tsr = tsr_max, 
+                                            theta_p = theta_p_max,
+                                            method="nearest"))
+            
+            #Limits for next iteration
+            tsr_lims = [tsr_max-tsr_step, tsr_max+tsr_step]
+            theta_p_lims = [theta_p_max-theta_p_step, theta_p_max+theta_p_step]
+            
+            
+            if plot_iter or it == len(tsr_steps_lst)-1:
+                if plot_2d or plot_3d:
+                    #Prepare meshgrids
+                    tsr_mesh, theta_p_mesh = np.meshgrid(tsr, theta_p)
+                    cp_mesh = ds_cp["c_p"].values.T
+                    cT_mesh = ds_cp["c_T"].values.T
+                    tsr_ticks = np.arange(tsr[0], tsr[1] + tsr_step, 1)
+                    # theta_p_ticks = np.arange(theta_p[0], 
+                    #                           theta_p[1] + theta_p_step, 
+                    #                           1)
+                    label_lst = [r'$\lambda$', r'$\theta_p\:\unit{[\degree]}$']
+                
+                if plot_2d:
+                    #Plot C_p
+                    self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+                                      xticks=tsr, yticks=theta_p,
+                                      plt_type="contour", 
+                                      labels=label_lst + [r"$C_p$"],
+                                      hline=theta_p_max, 
+                                      hline_label=r"$\theta_p=" 
+                                                  + str(theta_p_max) 
+                                                  + r"\:\unit{\degree}$",
+                                      vline=tsr_max, 
+                                      vline_label=r"$\lambda=" 
+                                                  + str(tsr_max) + r"$",
+                                      intersect_label=r"$C_{p,max}=" + 
+                                                      str(round(c_p_max,3)) 
+                                                      + r"$",
+                                      exp_fld=self.exp_fld, 
+                                      fname = f"C_p_contour_{gaulert_method}"
+                                              +f"_it{it}")
+                    #Plot C_T
+                    self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
+                                      xticks=tsr, yticks=theta_p,
+                                      plt_type="contour", 
+                                      labels=label_lst + [r"$C_T$"],
+                                      hline=theta_p_max, 
+                                      hline_label=r"$\theta_p=" 
+                                                  + str(theta_p_max) 
+                                                  + r"\:\unit{\degree}$",
+                                      vline=tsr_max, 
+                                      vline_label=r"$\lambda=" 
+                                                  + str(tsr_max) + r"$",
+                                      exp_fld=self.exp_fld, 
+                                      fname = f"C_T_contour_{gaulert_method}"
+                                              +f"_it{it}")
+                
+                if plot_3d:
+                    #Plot C_p
+                    self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+                                      xticks=tsr, yticks=theta_p,
+                                 plt_type="surface", 
+                                 labels=label_lst + [r"$C_p$"],
+                                 exp_fld=self.exp_fld, 
+                                 fname = f"C_p_surface_{gaulert_method}"
+                                         +f"_it{it}")
+                    #Plot C_t
+                    self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
+                                      xticks=tsr, yticks=theta_p,
+                                 plt_type="surface", 
+                                 labels=label_lst + [r"$C_T$"],
+                                 exp_fld=self.exp_fld, 
+                                 fname = f"C_T_surface_{gaulert_method}"
+                                         +f"_it{it}")
+            
+            
+        #Save results to class variables
+        self.tsr_max, self.theta_p_max = (tsr_max, theta_p_max)
+        self.c_p_max = c_p_max
+        self.c_T_max = c_T_max
         
-        #Maximum C_P and corresponding coordinates
-        c_p_arr= ds_cp["c_p"]
-        self.c_p_max = c_p_arr.max().item()
+        # if plot_2d or plot_3d:
+        #     #Prepare meshgrids
+        #     tsr_mesh, theta_p_mesh = np.meshgrid(tsr, theta_p)
+        #     cp_mesh = ds_cp["c_p"].values.T
+        #     cT_mesh = ds_cp["c_T"].values.T
+        #     tsr_ticks = np.arange(tsr[0], tsr[1] + tsr_step, 1)
+        #     theta_p_ticks = np.arange(theta_p[0], theta_p[1] + theta_p_step, 1)
+        #     label_lst = [r'$\lambda$', r'$\theta_p\:\unit{[\degree]}$']
         
-        # Find the coordinates where the maximum value occurs
-        max_coords = c_p_arr.where(c_p_arr==c_p_arr.max(), drop=True).coords
-        # Convert the coordinates to a dictionary for easy access
-        coord_dict = {dim: round(coord.values.item(),3) 
-                      for dim, coord in max_coords.items()}
-        self.tsr_max, self.theta_p_max = coord_dict.values()
-        self.c_T_max = float(ds_cp["c_T"].sel(tsr = self.tsr_max, 
-                                        theta_p = self.theta_p_max,
-                                        method="nearest"))
+        # if plot_2d:
+        #     #Plot C_p
+        #     self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+        #                       xticks=tsr_ticks, yticks=theta_p_ticks,
+        #                       plt_type="contour", labels=label_lst + [r"$C_p$"],
+        #                       hline=self.theta_p_max, 
+        #                       hline_label=r"$\theta_p=" + str(self.theta_p_max) 
+        #                                   + r"\:\unit{\degree}$",
+        #                       vline=self.tsr_max, 
+        #                       vline_label=r"$\lambda=" 
+        #                                   + str(self.tsr_max) + r"$",
+        #                       intersect_label=r"$C_{p,max}=" + 
+        #                                       str(round(self.c_p_max,3)) + r"$",
+        #                       exp_fld=self.exp_fld, 
+        #                       fname = f"C_p_contour_{gaulert_method}")
+        #     #Plot C_T
+        #     self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
+        #                       xticks=tsr_ticks, yticks=theta_p_ticks,
+        #                       plt_type="contour", labels=label_lst + [r"$C_T$"],
+        #                       hline=self.theta_p_max, 
+        #                       hline_label=r"$\theta_p=" + str(self.theta_p_max) 
+        #                                   + r"\:\unit{\degree}$",
+        #                       vline=self.tsr_max, 
+        #                       vline_label=r"$\lambda=" 
+        #                                   + str(self.tsr_max) + r"$",
+        #                       exp_fld=self.exp_fld, 
+        #                       fname = f"C_T_contour_{gaulert_method}")
         
-        if plot_2d or plot_3d:
-            #Prepare meshgrids
-            tsr_mesh, theta_p_mesh = np.meshgrid(tsr, theta_p)
-            cp_mesh = ds_cp["c_p"].values.T
-            cT_mesh = ds_cp["c_T"].values.T
-            tsr_ticks = np.arange(tsr[0], tsr[1] + tsr_step, 1)
-            theta_p_ticks = np.arange(theta_p[0], theta_p[1] + theta_p_step, 1)
-            label_lst = [r'$\lambda$', r'$\theta_p\:\unit{[\degree]}$']
-        
-        if plot_2d:
-            #Plot C_p
-            self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
-                              xticks=tsr_ticks, yticks=theta_p_ticks,
-                              plt_type="contour", labels=label_lst + [r"$C_p$"],
-                              hline=self.theta_p_max, 
-                              hline_label=r"$\theta_p=" + str(self.theta_p_max) 
-                                          + r"\:\unit{\degree}$",
-                              vline=self.tsr_max, 
-                              vline_label=r"$\lambda=" 
-                                          + str(self.tsr_max) + r"$",
-                              intersect_label=r"$C_{p,max}=" + 
-                                              str(round(self.c_p_max,3)) + r"$",
-                              exp_fld=self.exp_fld, 
-                              fname = f"C_p_contour_{gaulert_method}")
-            #Plot C_T
-            self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
-                              xticks=tsr_ticks, yticks=theta_p_ticks,
-                              plt_type="contour", labels=label_lst + [r"$C_T$"],
-                              hline=self.theta_p_max, 
-                              hline_label=r"$\theta_p=" + str(self.theta_p_max) 
-                                          + r"\:\unit{\degree}$",
-                              vline=self.tsr_max, 
-                              vline_label=r"$\lambda=" 
-                                          + str(self.tsr_max) + r"$",
-                              exp_fld=self.exp_fld, 
-                              fname = f"C_T_contour_{gaulert_method}")
-        
-        if plot_3d:
-            #Plot C_p
-            self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
-                              xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="surface", labels=label_lst + [r"$C_p$"],
-                         exp_fld=self.exp_fld, 
-                         fname = f"C_p_surface_{gaulert_method}")
-            #Plot C_t
-            self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
-                              xticks=tsr_ticks, yticks=theta_p_ticks,
-                         plt_type="surface", labels=label_lst + [r"$C_T$"],
-                         exp_fld=self.exp_fld, 
-                         fname = f"C_T_surface_{gaulert_method}")
+        # if plot_3d:
+        #     #Plot C_p
+        #     self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cp_mesh, 
+        #                       xticks=tsr_ticks, yticks=theta_p_ticks,
+        #                  plt_type="surface", labels=label_lst + [r"$C_p$"],
+        #                  exp_fld=self.exp_fld, 
+        #                  fname = f"C_p_surface_{gaulert_method}")
+        #     #Plot C_t
+        #     self.plot_3d_data(X=tsr_mesh, Y=theta_p_mesh, Z=cT_mesh, 
+        #                       xticks=tsr_ticks, yticks=theta_p_ticks,
+        #                  plt_type="surface", labels=label_lst + [r"$C_T$"],
+        #                  exp_fld=self.exp_fld, 
+        #                  fname = f"C_T_surface_{gaulert_method}")
         
         return self.c_p_max, self.tsr_max, self.theta_p_max, ds_cp, ds_bem
     
@@ -2051,15 +2184,16 @@ if __name__ == "__main__":
                        integ_method = integ_method,
                        plt_marker = plt_marker)
     
-    Calc_sel = dict(T1=True,
+    Calc_sel = dict(T1=False,
                     T2=False, 
                     T3=False, 
                     T4=False, 
                     T5=False, 
                     T6=False)
-    t1_inputs = dict(precision="fine, small",
+    t1_inputs = dict(step_mode="fine, small",
                      plot_2d = False,
                      plot_3d=False,
+                     plot_iter=False,
                      multiproc=True)
     
     
@@ -2070,58 +2204,58 @@ if __name__ == "__main__":
     #Calculate C_p values
     if Calc_sel ["T1"]:
         start = perf_counter()
-        if t1_inputs["precision"] == "medium, full":
+        if t1_inputs["step_mode"] == "medium, full":
             #Medium resolution, full search area
             c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
                 BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method="Madsen",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=False,
+                                        init_steps = (.5, .5))
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
                 BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method="classic",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=False,
+                                        init_steps = (.5, .5))
             
                 
-        elif t1_inputs["precision"] == "fine, full":
+        elif t1_inputs["step_mode"] == "fine, full":
             #Fine resolution, full search area
             c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
-                BEM_solver.find_c_p_max(tsr_step = .1, 
-                                        theta_p_step = .1,
-                                        plot_2d=t1_inputs["plot_2d"], 
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method="Madsen",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=False,
+                                        init_steps = (.1, .1))
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-                BEM_solver.find_c_p_max(tsr_step = .1, 
-                                        theta_p_step = .1,
-                                        plot_2d=t1_inputs["plot_2d"], 
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
                                         gaulert_method="classic",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=False,
+                                        init_steps = (.1, .1))
             
                 
         else:    
-            #Fine resolution, only around final value
+            #Fine resolution, iterative calculation
             c_P_max_mad, tsr_max_mad, theta_p_max_mad, ds_cp_mad, ds_bem_mad = \
-                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.3], 
-                                        tsr_step = .1, 
-                                        theta_p_lims = [-.5, .5], 
-                                        theta_p_step = .1,
-                                        plot_2d=t1_inputs["plot_2d"], 
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
+                                        plot_iter=t1_inputs["plot_iter"],
                                         gaulert_method="Madsen",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=True)
             c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-                BEM_solver.find_c_p_max(tsr_lims = [7.4,8.3], 
-                                        tsr_step = .1, 
-                                        theta_p_lims = [-.5, .5], 
-                                        theta_p_step = .1,
-                                        plot_2d=t1_inputs["plot_2d"], 
+                BEM_solver.find_c_p_max(plot_2d=t1_inputs["plot_2d"], 
                                         plot_3d=t1_inputs["plot_3d"],
+                                        plot_iter=t1_inputs["plot_iter"],
                                         gaulert_method="classic",
-                                        multiprocessing=t1_inputs["multiproc"])
+                                        multiprocessing=t1_inputs["multiproc"],
+                                        iterative=True)
             
         end = perf_counter()
         print (f"Task 1 took {np.round(end-start,2)} s")
@@ -2433,3 +2567,9 @@ if __name__ == "__main__":
     # c_p, c_T, a_arr, a_p_arr, p_T, p_N = BEM_solver.integ_p_T(tsr=5.5, 
     #                                                       theta_p=np.deg2rad(-4), 
     #                                                       r_range=BEM_solver.bld_df.r)
+
+    # c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
+    #     BEM_solver.find_c_p_max(plot_2d=True, 
+    #                             plot_3d=False,
+    #                             plot_iter=True,
+    #                             multiprocessing=True)
