@@ -2410,24 +2410,24 @@ if __name__ == "__main__":
         print (f"Task 6 took {np.round(end-start,2)} s")
 
 #%% Export
-    
-    BEM_solver.exp_res_to_text(exp_fld=BEM_solver.exp_fld, 
-                               T1_vals=dict(tsr_c = tsr_max, 
-                                            theta_p_c = theta_p_max,
-                                            c_p_c = c_P_max,
-                                            tsr_m = tsr_max_mad, 
-                                            theta_p_m = theta_p_max_mad,
-                                            c_p_m = c_P_max_mad), 
-                               T2_vals=dict(V_rtd= V_rtd, 
-                                             omega_max= omega_max,
-                                             rpm_max =rpm_max), 
-                               T3_vals=dict(V_0 = df_theta_p.V_0, 
-                                            theta_p = df_theta_p.theta_p), 
-                               T5_vals=dict(AEP_20 = AEP_20*1e-6,
-                                            AEP_25 = AEP*1e-6),
-                               T6_vals=dict(c = c_t6, theta_p = theta_p_t6, 
-                                            theta = theta_t6, c_p = c_p_t6)
-                               )
+    if all(Calc_sel.values()):
+        BEM_solver.exp_res_to_text(exp_fld=BEM_solver.exp_fld, 
+                                   T1_vals=dict(tsr_c = tsr_max, 
+                                                theta_p_c = theta_p_max,
+                                                c_p_c = c_P_max,
+                                                tsr_m = tsr_max_mad, 
+                                                theta_p_m = theta_p_max_mad,
+                                                c_p_m = c_P_max_mad), 
+                                   T2_vals=dict(V_rtd= V_rtd, 
+                                                 omega_max= omega_max,
+                                                 rpm_max =rpm_max), 
+                                   T3_vals=dict(V_0 = df_theta_p.V_0, 
+                                                theta_p = df_theta_p.theta_p), 
+                                   T5_vals=dict(AEP_20 = AEP_20*1e-6,
+                                                AEP_25 = AEP*1e-6),
+                                   T6_vals=dict(c = c_t6, theta_p = theta_p_t6, 
+                                                theta = theta_t6, c_p = c_p_t6)
+                                   )
 
 #%% Testing
     # c_p, c_T, a_arr, a_p_arr, p_T, p_N = BEM_solver.integ_p_T(tsr=5.5, 
