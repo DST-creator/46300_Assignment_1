@@ -436,7 +436,7 @@ class BEM (Utils_BEM):
 # =============================================================================
  
         if r>=.999*self.R:
-            a = np.array([1])
+            a = np.float64(1)
         
         conv_res = (abs(a-a_0), abs(a_p-a_p_0))
         
@@ -536,10 +536,10 @@ class BEM (Utils_BEM):
                                                     gaulert_method =
                                                     gaulert_method)
 
-            a_arr[i] = a_i.item()
-            a_p_arr[i] = a_p_i.item()
-            C_t[i] = C_t_i.item()
-            C_n[i] = C_n_i.item()
+            a_arr[i] = a_i
+            a_p_arr[i] = a_p_i
+            C_t[i] = C_t_i
+            C_n[i] = C_n_i
         
         V_0=10
         omega = tsr*V_0/self.R
@@ -656,9 +656,9 @@ class BEM (Utils_BEM):
                                                     gaulert_method =
                                                     gaulert_method)
 
-            a_arr[i] = a_i.item()
-            a_p_arr[i] = a_p_i.item()
-            F_arr[i] = F_i.item()
+            a_arr[i] = a_i
+            a_p_arr[i] = a_p_i
+            F_arr[i] = F_i
         
         #Calculate power coefficient
         dc_p = self.dC_p (r=r_range, tsr=tsr, 
@@ -1945,8 +1945,8 @@ class BEM (Utils_BEM):
             a_i, a_p_i, _, _, _,_, _ = self.converge_BEM(r=r, 
                                                     tsr=tsr,
                                                     theta_p=np.deg2rad(theta_p))
-            a[i] = a_i.item()
-            a_p[i] = a_p_i.item()#
+            a[i] = a_i
+            a_p[i] = a_p_i
         
         #Calculate local forces
         p_N, p_T = self.calc_local_forces (r_range=r_range, 
@@ -2082,9 +2082,9 @@ class BEM (Utils_BEM):
                     dC_p  = 4*np.power(tsr,2)*((r/R)**2)*a_p*(1-a)
                     
                     #Save results to dataframe
-                    ds_res["a"].loc[dict(c=c,theta_p=theta_p)] = a[0]
-                    ds_res["a_p"].loc[dict(c=c,theta_p=theta_p)] = a_p[0]
-                    ds_res["dC_p"].loc[dict(c=c,theta_p=theta_p)] = dC_p[0]
+                    ds_res["a"].loc[dict(c=c,theta_p=theta_p)] = a
+                    ds_res["a_p"].loc[dict(c=c,theta_p=theta_p)] = a_p
+                    ds_res["dC_p"].loc[dict(c=c,theta_p=theta_p)] = dC_p
             
             # Find the coordinates where the maximum value occurs
             max_item = ds_res["dC_p"].where(ds_res["dC_p"]==ds_res["dC_p"].max(), 
@@ -2184,7 +2184,7 @@ if __name__ == "__main__":
                        integ_method = integ_method,
                        plt_marker = plt_marker)
     
-    Calc_sel = dict(T1=False,
+    Calc_sel = dict(T1=True,
                     T2=False, 
                     T3=False, 
                     T4=False, 

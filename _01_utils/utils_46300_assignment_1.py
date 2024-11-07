@@ -325,7 +325,7 @@ class Utils_BEM():
         C_d = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cd_aoa[i,:]) 
                         for i in range(tcr.size)])
         
-        return C_l, C_d
+        return C_l.item(), C_d.item()
     
     def check_radius_range (self, r_range, R):
         """Checks inputs for a range of radii for completeness and 
