@@ -563,6 +563,18 @@ class BEM (Utils_BEM):
 
         return c_p, c_T, a_arr, a_p_arr, p_T, p_N
     
+    def integ_p_T_inv (self, vars_in, r_range,
+                             c=-1, tcr = -1, beta = -np.inf, sigma = -1,
+                             r_range_type = "values", 
+                             gaulert_method = "classic"):
+        tsr, theta_p = vars_in
+        
+        c_p, _, _, _, _, _ = self.integ_p_T(tsr=tsr, theta_p=theta_p, r_range=r_range,
+                             c=c, tcr = tcr, beta = beta, sigma = sigma,
+                             r_range_type = r_range_type, 
+                             gaulert_method = gaulert_method)
+        return 1-c_p
+    
     def integ_dC_p (self, tsr, theta_p, r_range,
                              c=-1, tcr = -1, beta = -np.inf, sigma = -1,
                              r_range_type = "values", 
@@ -2184,7 +2196,7 @@ if __name__ == "__main__":
                        integ_method = integ_method,
                        plt_marker = plt_marker)
     
-    Calc_sel = dict(T1=True,
+    Calc_sel = dict(T1=False,
                     T2=False, 
                     T3=False, 
                     T4=False, 
@@ -2564,12 +2576,61 @@ if __name__ == "__main__":
                                    )
 
 #%% Testing
-    # c_p, c_T, a_arr, a_p_arr, p_T, p_N = BEM_solver.integ_p_T(tsr=5.5, 
-    #                                                       theta_p=np.deg2rad(-4), 
-    #                                                       r_range=BEM_solver.bld_df.r)
-
-    # c_P_max, tsr_max, theta_p_max, ds_cp, ds_bem = \
-    #     BEM_solver.find_c_p_max(plot_2d=True, 
-    #                             plot_3d=False,
-    #                             plot_iter=True,
-    #                             multiprocessing=True)
+    tsr_lims = [5,10]
+    theta_p_lims = np.deg2rad([-3, 4])
+    
+    r_range = BEM_solver.bld_df.r
+    
+    args = (r_range)
+    
+    #Standard method (BFGS, L-BFGS-B, SLSQP)
+    start = perf_counter()
+    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+                                      x0=(tsr_lims[0], theta_p_lims[0]),
+                                      args=args,
+                                      bounds = (tsr_lims, theta_p_lims),
+                                      tol = 1e-3,
+                                      options=dict(maxiter=500))
+    end = perf_counter()
+    tsr, theta_p = min_res.x
+    print(f"Standard: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+    
+    #Nelder-Mead method
+    start = perf_counter()
+    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+                                      x0=(tsr_lims[0], theta_p_lims[0]),
+                                      args=args,
+                                      bounds = (tsr_lims, theta_p_lims),
+                                      method='Nelder-Mead',
+                                      tol = 1e-3,
+                                      options=dict(maxiter=500))
+    end = perf_counter()
+    tsr, theta_p = min_res.x
+    print(f"Nelder-Mead: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+    
+    #Powell BFGS, L-BFGS-B, SLSQP
+    start = perf_counter()
+    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+                                      x0=(8, theta_p_lims[0]),
+                                      args=args,
+                                      bounds = (tsr_lims, theta_p_lims),
+                                      method='Powell',
+                                      tol = 1e-3,
+                                      options=dict(maxiter=500))
+    end = perf_counter()
+    tsr, theta_p = min_res.x
+    print(f"Powell: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+    
+    #Cobyla method
+    start = perf_counter()
+    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+                                      x0=(tsr_lims[0], theta_p_lims[0]),
+                                      args=args,
+                                      bounds = (tsr_lims, theta_p_lims),
+                                      method='COBYLA',
+                                      tol = 1e-3,
+                                      options=dict(maxiter=500))
+    end = perf_counter()
+    tsr, theta_p = min_res.x
+    print(f"COBYLA: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+    
