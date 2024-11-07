@@ -220,6 +220,70 @@ class Utils_BEM():
 
         return airfoil_data, file_names
     
+    def calc_tsr (self, V_0, omega, R=-1):
+        """Calculate tip speed ratio
+        
+        Parameters:
+            V_0 (array-like or float):
+                The free stream velocity [m/s]
+            omega (array-like or float):
+                The rotational speed of the rotor [rad/s]
+            R (array-like or float):
+                The rotor radius. If -1 is given, the last blade station of 
+                the bld_df dataframe is used (default: -1)
+        
+        Returns:
+            tsr (array-like or float):
+                The tip speed ratio
+        """
+        R = R if not (np.isscalar(R) and R==-1) else self.bld_df.r.iloc[-1]
+        
+        tsr = omega*R/V_0
+        return tsr
+    
+    def calc_V_0_tsr (self, tsr, omega, R=-1):
+        """Calculate wind velocity from tip speed ratio and rotational speed
+        
+        Parameters:
+            tsr (array-like or float):
+                The tip speed ratio
+            omega (array-like or float):
+                The rotational speed of the rotor [rad/s]
+            R (array-like or float):
+                The rotor radius. If -1 is given, the last blade station of 
+                the bld_df dataframe is used (default: -1)
+        
+        Returns:
+            V_0 (array-like or float):
+                The free stream velocity [m/s]
+        """
+        R = R if not (np.isscalar(R) and R==-1) else self.bld_df.r.iloc[-1]
+        
+        V_0 = omega*R/tsr
+        return V_0
+    
+    def calc_omega_tsr (self, tsr, V_0, R=-1):
+        """Calculate rotational speed from tip speed ratio and wind velocity
+        
+        Parameters:
+            tsr (array-like or float):
+                The tip speed ratio
+            V_0 (array-like or float):
+                The free stream velocity [m/s] 
+            R (array-like or float):
+                The rotor radius. If -1 is given, the last blade station of 
+                the bld_df dataframe is used (default: -1)
+        
+        Returns:
+            omega (array-like or float):
+                The rotational speed of the rotor [rad/s]
+        """
+        R = R if not (np.isscalar(R) and R==-1) else self.bld_df.r.iloc[-1]
+        
+        omega  = tsr*V_0/R
+        return omega
+        
+    
     def interp_coeffs (self, aoa, tcr):
         """Interpolates the lift and drag coefficient from the look-up tables 
         in the airfoil_ds.
@@ -352,10 +416,10 @@ class Utils_BEM():
                 - 'surface': 3d-surface plot
             azim (int or float - optional):
                 Azimuth angle for the 3d view projection (only relevant for 
-                plt_type 'surface')
+                plt_type 'surface') (default: 45)
             elev (int or float - optional):
                 Elevation angle for the 3d view projection (only relevant for 
-                plt_type 'surface')
+                plt_type 'surface') (default: 30)
             labels (array-like - optional):
                 Labels for the three axes - Must have length 3!
             hline (bool, int or float - optional):

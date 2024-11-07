@@ -389,7 +389,7 @@ class BEM (Utils_BEM):
             sigma = np.divide(c*self.B, 2*np.pi*r)
         
         a, a_p, F, dC_T_0, C_t, C_n = self.calc_ind_factors(r=r, tsr=tsr, theta_p=theta_p, 
-                                          a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0, 
+                                          a_0=a_0, a_p_0=a_p_0, dC_T_0=dC_T_0, f=f,
                                           c=c, tcr = tcr, beta=beta, sigma=sigma,
                                           gaulert_method=gaulert_method)
         n = 1
@@ -514,10 +514,10 @@ class BEM (Utils_BEM):
             tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
                             for r in r_range])
         if type(beta) in [int, float] and beta == -np.inf:
-            beta = np.array([np.deg2rad(np.interp(r, 
+            beta = np.deg2rad(np.array([np.interp(r, 
                                                   self.bld_df.r, 
-                                                  self.bld_df.beta)) 
-                             for r in r_range])
+                                                  self.bld_df.beta)
+                             for r in r_range]))
         if type(sigma)== int and sigma == -1:
             sigma = np.divide(c*self.B, 2*np.pi*np.array(r_range))
         
@@ -635,10 +635,10 @@ class BEM (Utils_BEM):
             tcr = np.array([np.interp(r, self.bld_df.r, self.bld_df.tcr) 
                             for r in r_range])
         if type(beta) in [int, float] and beta == -np.inf:
-            beta = np.array([np.deg2rad(np.interp(r, 
+            beta = np.deg2rad(np.array([np.interp(r, 
                                                   self.bld_df.r, 
-                                                  self.bld_df.beta)) 
-                             for r in r_range])
+                                                  self.bld_df.beta)
+                             for r in r_range]))
         if type(sigma)== int and sigma == -1:
             sigma = np.divide(c*self.B, 2*np.pi*np.array(r_range))
         
