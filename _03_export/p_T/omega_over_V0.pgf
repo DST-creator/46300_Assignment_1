@@ -25,6 +25,9 @@
 %%   \usepackage[T1]{fontenc}
 %%   \usepackage{amsmath}
 %%   \usepackage[detect-all,locale=DE]{siunitx}
+%%   \ifdefined\pdftexversion\else  % non-pdftex case.
+%%     \usepackage{fontspec}
+%%   \fi
 %%   \makeatletter\@ifpackageloaded{underscore}{}{\usepackage[strings]{underscore}}\makeatother
 %%
 \begingroup%
@@ -696,8 +699,8 @@
 \definecolor{currentstroke}{rgb}{0.000000,0.000000,0.000000}%
 \pgfsetstrokecolor{currentstroke}%
 \pgfsetdash{{5.550000pt}{2.400000pt}}{0.000000pt}%
-\pgfpathmoveto{\pgfqpoint{1.183951in}{8.701783in}}%
-\pgfpathlineto{\pgfqpoint{13.583951in}{8.701783in}}%
+\pgfpathmoveto{\pgfqpoint{1.183951in}{8.701775in}}%
+\pgfpathlineto{\pgfqpoint{13.583951in}{8.701775in}}%
 \pgfusepath{stroke}%
 \end{pgfscope}%
 \begin{pgfscope}%
@@ -709,8 +712,8 @@
 \definecolor{currentstroke}{rgb}{0.000000,0.000000,0.000000}%
 \pgfsetstrokecolor{currentstroke}%
 \pgfsetdash{{5.550000pt}{2.400000pt}}{0.000000pt}%
-\pgfpathmoveto{\pgfqpoint{12.547145in}{1.095774in}}%
-\pgfpathlineto{\pgfqpoint{12.547145in}{9.395774in}}%
+\pgfpathmoveto{\pgfqpoint{12.547134in}{1.095774in}}%
+\pgfpathlineto{\pgfqpoint{12.547134in}{9.395774in}}%
 \pgfusepath{stroke}%
 \end{pgfscope}%
 \begin{pgfscope}%
@@ -804,13 +807,13 @@
 \definecolor{textcolor}{rgb}{0.000000,0.000000,0.000000}%
 \pgfsetstrokecolor{textcolor}%
 \pgfsetfillcolor{textcolor}%
-\pgftext[x=3.663951in,y=8.924246in,,bottom]{\color{textcolor}{\rmfamily\fontsize{25.000000}{30.000000}\selectfont\catcode`\^=\active\def^{\ifmmode\sp\else\^{}\fi}\catcode`\%=\active\def%{\%}$\omega_{max}=1.025\:\unit{rad/\s}$}}%
+\pgftext[x=3.663951in,y=8.924238in,,bottom]{\color{textcolor}{\rmfamily\fontsize{25.000000}{30.000000}\selectfont\catcode`\^=\active\def^{\ifmmode\sp\else\^{}\fi}\catcode`\%=\active\def%{\%}$\omega_{max}=1.025\:\unit{rad/\s}$}}%
 \end{pgfscope}%
 \begin{pgfscope}%
 \definecolor{textcolor}{rgb}{0.000000,0.000000,0.000000}%
 \pgfsetstrokecolor{textcolor}%
 \pgfsetfillcolor{textcolor}%
-\pgftext[x=12.135002in, y=1.388794in, left, base,rotate=90.000000]{\color{textcolor}{\rmfamily\fontsize{25.000000}{30.000000}\selectfont\catcode`\^=\active\def^{\ifmmode\sp\else\^{}\fi}\catcode`\%=\active\def%{\%}$V_{rated}=11.42\:\unit{[\m/\s]}$}}%
+\pgftext[x=12.134991in, y=1.388794in, left, base,rotate=90.000000]{\color{textcolor}{\rmfamily\fontsize{25.000000}{30.000000}\selectfont\catcode`\^=\active\def^{\ifmmode\sp\else\^{}\fi}\catcode`\%=\active\def%{\%}$V_{rated}=11.42\:\unit{[\m/\s]}$}}%
 \end{pgfscope}%
 \end{pgfpicture}%
 \makeatother%

@@ -283,7 +283,6 @@ class Utils_BEM():
         omega  = tsr*V_0/R
         return omega
         
-    
     def interp_coeffs (self, aoa, tcr):
         """Interpolates the lift and drag coefficient from the look-up tables 
         in the airfoil_ds.
@@ -293,39 +292,60 @@ class Utils_BEM():
         thickness.
         
         Parameters:
-            aoa (scalar numerical value or array-like):
+            aoa (scalar numerical value):
                 Angles of attack [deg]
-            tcr (scalar numerical value or array-like):
+            tcr (scalar numerical value):
                 Thickness to chord length ratios of the airfoil [m]
               
         Returns:
-            C_l (scalar numerical value or array-like):
+            C_l (scalar numerical value):
                 Lift coefficients 
-            C_d (scalar numerical value or array-like):
+            C_d (scalar numerical value):
                 Drag coefficients 
         """
 
-        #Determine lift and drag coefficients
-        aoa = np.array(aoa).reshape(-1)
-        tcr = np.array(tcr).reshape(-1)
+
+        #Idea:
+        #Find the two airfoils in which between the tcr lies and only interpolate for those two airfoils
+        tcr_airfoils = np.fromiter(self.t_airfoils.values(), dtype=float)
+        if tcr > 100:
+            raise ValueError("thickness to chord ratio must be <=1")
+        elif tcr<min(tcr_airfoils):
+            raise ValueError("thickness to chord ratio smaller than the the "
+                             "value of the thinnest airfoil")
         
-        cl_aoa=np.zeros([aoa.size,6])
-        cd_aoa=np.zeros([aoa.size,6])
+        i_high = np.argwhere(tcr_airfoils>=tcr)[0][0]
+        i_low = np.argwhere(tcr_airfoils<=tcr)[-1][0]
+        indices = [i_low, i_high]
         
-        for i in range(6):
-            cl_aoa[:,i]=np.interp (aoa,
-                                   self.aoa_arr,
-                                   self.cl_arr[:,i])
-            cd_aoa[:,i]=np.interp (aoa,
-                                   self.aoa_arr,
-                                   self.cd_arr[:,i])
+        if i_low == i_high:
+            C_l=np.interp (aoa,
+                                self.aoa_arr,
+                                self.cl_arr[:,i_low])
+            C_d=np.interp (aoa,
+                            self.aoa_arr,
+                            self.cd_arr[:,i_low])
+        else:    
+            #Determine lift and drag coefficients
+            cl_aoa_1=np.interp (aoa,
+                                self.aoa_arr,
+                                self.cl_arr[:,i_low])
+            cl_aoa_2=np.interp (aoa,
+                                self.aoa_arr,
+                                self.cl_arr[:,i_high])
+            cd_aoa_1=np.interp (aoa,
+                                self.aoa_arr,
+                                self.cd_arr[:,i_low])
+            cd_aoa_2=np.interp (aoa,
+                                self.aoa_arr,
+                                self.cd_arr[:,i_high])
+            
+            C_l =np.interp(tcr, tcr_airfoils[indices], 
+                           [cl_aoa_1, cl_aoa_2])
+            C_d =np.interp(tcr, tcr_airfoils[indices], 
+                           [cd_aoa_1, cd_aoa_2])
         
-        C_l = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cl_aoa[i,:]) 
-                        for i in range(tcr.size)])
-        C_d = np.array([np.interp(tcr[i], [*self.t_airfoils.values()], cd_aoa[i,:]) 
-                        for i in range(tcr.size)])
-        
-        return C_l.item(), C_d.item()
+        return C_l, C_d
     
     def check_radius_range (self, r_range, R):
         """Checks inputs for a range of radii for completeness and 

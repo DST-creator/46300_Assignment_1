@@ -1499,7 +1499,7 @@ class BEM (Utils_BEM):
 
         #Cacluate residual pitch angles
         #Create wind speed range from V_rtd to v_out-1 m/s
-        V_0_range = np.arange(np.ceil(self.V_rtd), self.v_out)
+        V_0_range = np.arange(np.ceil(self.V_rtd), self.v_out, .5)
         tsr = self.omega_max*self.R/V_0_range
         n_vels = V_0_range.size
         
@@ -2456,9 +2456,9 @@ if __name__ == "__main__":
         fig.savefig(fname+".pgf")                     # Save PGF file for text inclusion in LaTeX
         plt.close(fig)
         
-        del i_rtd, fig, ax, V_0, V_0_ext, P, T, c_p, c_T
-        end = perf_counter()
-        print (f"Task 3 took {np.round(end-start,2)} s")
+        # del i_rtd, fig, ax, V_0, V_0_ext, P, T, c_p, c_T
+        # end = perf_counter()
+        # print (f"Task 3 took {np.round(end-start,2)} s")
 
 #%% Task 4
     # BEM_solver.insert_test_values()
@@ -2576,61 +2576,63 @@ if __name__ == "__main__":
                                    )
 
 #%% Testing
-    tsr_lims = [5,10]
-    theta_p_lims = np.deg2rad([-3, 4])
-    
-    r_range = BEM_solver.bld_df.r
-    
-    args = (r_range)
-    
-    #Standard method (BFGS, L-BFGS-B, SLSQP)
-    start = perf_counter()
-    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
-                                      x0=(tsr_lims[0], theta_p_lims[0]),
-                                      args=args,
-                                      bounds = (tsr_lims, theta_p_lims),
-                                      tol = 1e-3,
-                                      options=dict(maxiter=500))
-    end = perf_counter()
-    tsr, theta_p = min_res.x
-    print(f"Standard: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
-    
-    #Nelder-Mead method
-    start = perf_counter()
-    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
-                                      x0=(tsr_lims[0], theta_p_lims[0]),
-                                      args=args,
-                                      bounds = (tsr_lims, theta_p_lims),
-                                      method='Nelder-Mead',
-                                      tol = 1e-3,
-                                      options=dict(maxiter=500))
-    end = perf_counter()
-    tsr, theta_p = min_res.x
-    print(f"Nelder-Mead: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
-    
-    #Powell BFGS, L-BFGS-B, SLSQP
-    start = perf_counter()
-    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
-                                      x0=(8, theta_p_lims[0]),
-                                      args=args,
-                                      bounds = (tsr_lims, theta_p_lims),
-                                      method='Powell',
-                                      tol = 1e-3,
-                                      options=dict(maxiter=500))
-    end = perf_counter()
-    tsr, theta_p = min_res.x
-    print(f"Powell: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
-    
-    #Cobyla method
-    start = perf_counter()
-    min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
-                                      x0=(tsr_lims[0], theta_p_lims[0]),
-                                      args=args,
-                                      bounds = (tsr_lims, theta_p_lims),
-                                      method='COBYLA',
-                                      tol = 1e-3,
-                                      options=dict(maxiter=500))
-    end = perf_counter()
-    tsr, theta_p = min_res.x
-    print(f"COBYLA: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+# =============================================================================
+#     tsr_lims = [5,10]
+#     theta_p_lims = np.deg2rad([-3, 4])
+#     
+#     r_range = BEM_solver.bld_df.r
+#     
+#     args = (r_range)
+#     
+#     #Standard method (BFGS, L-BFGS-B, SLSQP)
+#     start = perf_counter()
+#     min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+#                                       x0=(tsr_lims[0], theta_p_lims[0]),
+#                                       args=args,
+#                                       bounds = (tsr_lims, theta_p_lims),
+#                                       tol = 1e-3,
+#                                       options=dict(maxiter=500))
+#     end = perf_counter()
+#     tsr, theta_p = min_res.x
+#     print(f"Standard: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+#     
+#     #Nelder-Mead method
+#     start = perf_counter()
+#     min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+#                                       x0=(tsr_lims[0], theta_p_lims[0]),
+#                                       args=args,
+#                                       bounds = (tsr_lims, theta_p_lims),
+#                                       method='Nelder-Mead',
+#                                       tol = 1e-3,
+#                                       options=dict(maxiter=500))
+#     end = perf_counter()
+#     tsr, theta_p = min_res.x
+#     print(f"Nelder-Mead: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+#     
+#     #Powell BFGS, L-BFGS-B, SLSQP
+#     start = perf_counter()
+#     min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+#                                       x0=(8, theta_p_lims[0]),
+#                                       args=args,
+#                                       bounds = (tsr_lims, theta_p_lims),
+#                                       method='Powell',
+#                                       tol = 1e-3,
+#                                       options=dict(maxiter=500))
+#     end = perf_counter()
+#     tsr, theta_p = min_res.x
+#     print(f"Powell: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+#     
+#     #Cobyla method
+#     start = perf_counter()
+#     min_res = scipy.optimize.minimize(BEM_solver.integ_p_T_inv, 
+#                                       x0=(tsr_lims[0], theta_p_lims[0]),
+#                                       args=args,
+#                                       bounds = (tsr_lims, theta_p_lims),
+#                                       method='COBYLA',
+#                                       tol = 1e-3,
+#                                       options=dict(maxiter=500))
+#     end = perf_counter()
+#     tsr, theta_p = min_res.x
+#     print(f"COBYLA: tsr: {tsr:.3f}, theta: {np.rad2deg(theta_p):.3f}, time: {end-start:.5f}")
+# =============================================================================
     
