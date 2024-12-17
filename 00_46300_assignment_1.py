@@ -1927,7 +1927,7 @@ class BEM (Utils_BEM):
         #Check inputs
         if not hasattr(self, 'V_rtd'): #I.e. if pitch angles
             print("Calculating V_rtd")
-            V_rtd, omega_max, _  = BEM_solver.find_v_rtd()
+            V_rtd, omega_max, _  = self.find_v_rtd()
         else:
             V_rtd = self.V_rtd
             omega_max = self.omega_max
@@ -1936,7 +1936,7 @@ class BEM (Utils_BEM):
         if V_0 > V_rtd:
             if not hasattr(self, 'df_theta_p'): #I.e. if pitch angles
                 print("Calculating Pitch angles above rated")
-                df_theta_p, _  = BEM_solver.find_pitch_above_rtd()
+                df_theta_p, _  = self.find_pitch_above_rtd()
             else:
                 df_theta_p = self.df_theta_p
                 
@@ -2196,9 +2196,9 @@ if __name__ == "__main__":
                        integ_method = integ_method,
                        plt_marker = plt_marker)
     
-    Calc_sel = dict(T1=False,
-                    T2=False, 
-                    T3=False, 
+    Calc_sel = dict(T1=True,
+                    T2=True, 
+                    T3=True, 
                     T4=False, 
                     T5=False, 
                     T6=False)
